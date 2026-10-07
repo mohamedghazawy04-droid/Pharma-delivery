@@ -147,3 +147,33 @@ export function playShiftFanfare(): void {
     osc.stop(startTime + 0.42);
   });
 }
+
+// Crisp notification chime when an order is delivered
+export function playDeliverySuccessSound(): void {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  const now = ctx.currentTime;
+  const tones = [
+    { freq: 783.99, delay: 0, duration: 0.2 },      // G5
+    { freq: 1046.5, delay: 0.1, duration: 0.25 },   // C6
+    { freq: 1318.51, delay: 0.22, duration: 0.35 }, // E6
+  ];
+
+  tones.forEach(({ freq, delay, duration }) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, now + delay);
+
+    gain.gain.setValueAtTime(0.4, now + delay);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + delay + duration);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now + delay);
+    osc.stop(now + delay + duration + 0.05);
+  });
+}

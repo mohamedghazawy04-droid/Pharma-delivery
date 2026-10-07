@@ -7,9 +7,11 @@ import {
   Users,
   Bell,
   LogOut,
+  HardDrive,
 } from 'lucide-react';
 import { UserRole, CourierProfile, Pharmacy } from '../types';
 import { playStoppageBellSound, requestNotificationPermission } from '../utils/audio';
+import { notificationService } from '../services/notificationService';
 import { store } from '../services/store';
 
 interface Props {
@@ -24,6 +26,7 @@ interface Props {
   onCourierSelect: (id: string) => void;
   onOpenNewOrder: () => void;
   onOpenAuthModal: () => void;
+  onOpenGoogleDrive?: () => void;
   activeAlertCount: number;
 }
 
@@ -39,11 +42,13 @@ export const Header: React.FC<Props> = ({
   onCourierSelect,
   onOpenNewOrder,
   onOpenAuthModal,
+  onOpenGoogleDrive,
   activeAlertCount,
 }) => {
   const activePharmacy = pharmacies.find((p) => p.id === activePharmacyId) || pharmacies[0];
 
   const handleTestSoundAndPermission = () => {
+    notificationService.requestPermission();
     requestNotificationPermission();
     playStoppageBellSound();
   };
@@ -157,6 +162,19 @@ export const Header: React.FC<Props> = ({
               <span className="hidden sm:inline">الحسابات والمناديب</span>
               <span className="sm:hidden">الحسابات</span>
             </button>
+
+            {/* Google Drive & Cloud Backup button */}
+            {onOpenGoogleDrive && (
+              <button
+                onClick={onOpenGoogleDrive}
+                title="تكامل Google Drive والنسخ السحابي وتصدير التقارير"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold transition shadow-2xs"
+              >
+                <HardDrive className="w-3.5 h-3.5 text-blue-600" />
+                <span className="hidden sm:inline">Google Drive</span>
+                <span className="sm:hidden">Drive</span>
+              </button>
+            )}
 
             {/* Quick Add Order Button for Pharmacist */}
             {currentRole === 'pharmacist' && (

@@ -11,6 +11,8 @@ import { EditOrderModal } from './components/EditOrderModal';
 import { AuthModal } from './components/AuthModal';
 import { PiggyBankModal } from './components/PiggyBankModal';
 import { ManagePharmaciesModal } from './components/pharmacist/ManagePharmaciesModal';
+import { GoogleDriveModal } from './components/GoogleDriveModal';
+import { DeliveryToast } from './components/DeliveryToast';
 import { Order, ShiftSummaryArchive } from './types';
 import { Bike, Plus } from 'lucide-react';
 
@@ -25,6 +27,7 @@ export default function App() {
   const [isManagePharmaciesOpen, setIsManagePharmaciesOpen] = useState(false);
   const [piggyBankSummary, setPiggyBankSummary] = useState<ShiftSummaryArchive | null>(null);
   const [isPiggyBankOpen, setIsPiggyBankOpen] = useState(false);
+  const [isGoogleDriveOpen, setIsGoogleDriveOpen] = useState(false);
 
   // Subscribe to reactive store
   useEffect(() => {
@@ -104,6 +107,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col font-['Cairo',sans-serif]">
+      {/* Live Order Delivery Browser Notification Banner Toast */}
+      <DeliveryToast />
+
       {/* 5-minute Inactivity Stoppage Real Alert Banner */}
       <StoppageAlertBanner
         couriers={state.couriers}
@@ -124,6 +130,7 @@ export default function App() {
         onCourierSelect={(id) => store.setCurrentCourier(id)}
         onOpenNewOrder={() => setIsNewOrderModalOpen(true)}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
+        onOpenGoogleDrive={() => setIsGoogleDriveOpen(true)}
         activeAlertCount={activeAlertingCouriers.length}
       />
 
@@ -144,6 +151,7 @@ export default function App() {
               setIsPiggyBankOpen(true);
             }}
             onOpenAuthModal={() => setIsAuthModalOpen(true)}
+            onOpenGoogleDrive={() => setIsGoogleDriveOpen(true)}
           />
         ) : currentCourier ? (
           <CourierDashboard
@@ -246,6 +254,14 @@ export default function App() {
         activePharmacyId={state.activePharmacyId}
         couriers={state.couriers}
         orders={state.orders}
+      />
+
+      <GoogleDriveModal
+        isOpen={isGoogleDriveOpen}
+        onClose={() => setIsGoogleDriveOpen(false)}
+        activePharmacy={activePharmacy}
+        orders={state.orders}
+        couriers={state.couriers}
       />
     </div>
   );

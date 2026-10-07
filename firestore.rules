@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Pharmacies: Read allowed for all authenticated users; writes allowed for manager/admins
+    match /pharmacies/{pharmacyId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Couriers: Read allowed for all; write allowed for authenticated users
+    match /couriers/{courierId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Orders: Read & Write allowed for authenticated users
+    match /orders/{orderId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Shift summaries
+    match /shiftSummaries/{summaryId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+  }
+}

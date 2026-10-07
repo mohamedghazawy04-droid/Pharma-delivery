@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   Package,
@@ -23,6 +23,11 @@ import {
   CreditCard,
   Banknote,
   Send,
+  HardDrive,
+  Bell,
+  BellRing,
+  PackageCheck,
+  Volume2,
 } from 'lucide-react';
 import {
   CourierProfile,
@@ -32,6 +37,7 @@ import {
   PaymentMethod,
 } from '../../types';
 import { store } from '../../services/store';
+import { notificationService, DeliveryAlertItem } from '../../services/notificationService';
 import { LiveMap } from '../LiveMap';
 import { AddPharmacyModal } from './AddPharmacyModal';
 import { ManagePharmaciesModal } from './ManagePharmaciesModal';
@@ -48,6 +54,7 @@ interface Props {
   onOpenEditOrder: (order: Order) => void;
   onOpenPiggyBank: (summary: ShiftSummaryArchive) => void;
   onOpenAuthModal: () => void;
+  onOpenGoogleDrive?: () => void;
 }
 
 export const PharmacistDashboard: React.FC<Props> = ({
@@ -61,6 +68,7 @@ export const PharmacistDashboard: React.FC<Props> = ({
   onOpenEditOrder,
   onOpenPiggyBank,
   onOpenAuthModal,
+  onOpenGoogleDrive,
 }) => {
   const [activeTab, setActiveTab] = useState<'couriers' | 'orders' | 'archive' | 'shifts' | 'map'>('couriers');
   const [selectedCourierId, setSelectedCourierId] = useState<string>(couriers[0]?.id || '');
@@ -73,6 +81,37 @@ export const PharmacistDashboard: React.FC<Props> = ({
   const [fastOrderValue, setFastOrderValue] = useState('');
   const [fastPaymentMethod, setFastPaymentMethod] = useState<PaymentMethod>('cash');
   const [fastCourierId, setFastCourierId] = useState(couriers[0]?.id || '');
+
+  // Web Notification API Service state
+  const [notificationPermission, setNotificationPermission] = useState<
+    NotificationPermission | 'unsupported'
+  >(notificationService.getPermission());
+  const [recentDeliveryAlerts, setRecentDeliveryAlerts] = useState<DeliveryAlertItem[]>(
+    notificationService.getRecentAlerts()
+  );
+  const [showAlertsList, setShowAlertsList] = useState(false);
+
+  useEffect(() => {
+    const unsubPerm = notificationService.onPermissionChange((perm) => {
+      setNotificationPermission(perm);
+    });
+    const unsubAlert = notificationService.onDeliveryAlert(() => {
+      setRecentDeliveryAlerts(notificationService.getRecentAlerts());
+    });
+    return () => {
+      unsubPerm();
+      unsubAlert();
+    };
+  }, []);
+
+  const handleRequestNotificationPermission = async () => {
+    const perm = await notificationService.requestPermission();
+    setNotificationPermission(perm);
+  };
+
+  const handleTestDeliveryNotification = () => {
+    notificationService.testNotification(pharmacy.name);
+  };
 
   // Filter couriers and orders belonging to THIS pharmacy
   const pharmacyCouriers = couriers.filter((c) => c.pharmacyId === pharmacy.id);
@@ -203,6 +242,17 @@ export const PharmacistDashboard: React.FC<Props> = ({
               <Plus className="w-3.5 h-3.5" />
               <span>مندوب جديد</span>
             </button>
+
+            {onOpenGoogleDrive && (
+              <button
+                onClick={onOpenGoogleDrive}
+                className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold transition shadow-2xs"
+                title="تصدير تقارير الأوردرات لـ Google Drive والنسخ السحابي"
+              >
+                <HardDrive className="w-3.5 h-3.5 text-blue-600" />
+                <span>Google Drive</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -282,6 +332,132 @@ export const PharmacistDashboard: React.FC<Props> = ({
             </button>
           </form>
         )}
+
+        {/* WEB NOTIFICATIONS SERVICE BAR (خدمة إشعارات المتصفح الفورية لتنبيه الصيدلي بتسليم الأوردرات) */}
+        <div className="mt-4 p-4 rounded-2xl border transition-all bg-white shadow-2xs">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div
+                className={`p-2.5 rounded-xl shrink-0 ${
+                  notificationPermission === 'granted'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : notificationPermission === 'denied'
+                    ? 'bg-rose-100 text-rose-700'
+                    : 'bg-amber-100 text-amber-700'
+                }`}
+              >
+                {notificationPermission === 'granted' ? (
+                  <BellRing className="w-5 h-5 animate-pulse" />
+                ) : notificationPermission === 'denied' ? (
+                  <AlertTriangle className="w-5 h-5" />
+                ) : (
+                  <Bell className="w-5 h-5" />
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-xs sm:text-sm font-extrabold text-slate-900">
+                    خدمة إشعارات المتصفح الفورية (Web Notifications API)
+                  </h4>
+                  {notificationPermission === 'granted' ? (
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                      <span>مفعلة وتعمل بنجاح</span>
+                    </span>
+                  ) : notificationPermission === 'denied' ? (
+                    <span className="bg-rose-100 text-rose-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                      محظورة في إعدادات المتصفح
+                    </span>
+                  ) : (
+                    <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                      تحتاج تفعيل
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {notificationPermission === 'granted'
+                    ? 'يتم إطلاق إشعار نظام فوري ورنين صوتي للصيدلي عند قيام أي مندوب بتسليم الأوردر والتحصيل.'
+                    : notificationPermission === 'denied'
+                    ? 'الإشعارات محظورة في متصفحك. يرجى الضغط على علامة القفل 🔒 بجوار شريط العنوان والسماح بالإشعارات.'
+                    : 'اضغط على تفعيل الإشعارات لتنبيهك فوراً على شاشة جهازك عند تسليم أي مندوب للأوردر حتى لو كان المتصفح في الخلفية.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Action Buttons */}
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              {notificationPermission !== 'granted' && (
+                <button
+                  onClick={handleRequestNotificationPermission}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-xs transition flex items-center gap-1.5"
+                >
+                  <Bell className="w-3.5 h-3.5" />
+                  <span>تفعيل إشعارات المتصفح الآن</span>
+                </button>
+              )}
+
+              <button
+                onClick={handleTestDeliveryNotification}
+                title="إطلاق إشعار تسليم تجريبي لفحص خدمة Web Notifications ورنين الصوت"
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+              >
+                <PackageCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span>تجربة إشعار التسليم 🔔</span>
+              </button>
+
+              {recentDeliveryAlerts.length > 0 && (
+                <button
+                  onClick={() => setShowAlertsList(!showAlertsList)}
+                  className="px-2.5 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                >
+                  <span>السجل ({recentDeliveryAlerts.length})</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Collapsible Recent Alerts Feed */}
+          {showAlertsList && recentDeliveryAlerts.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-slate-100 space-y-2 animate-in fade-in">
+              <div className="flex items-center justify-between text-xs text-slate-500 font-bold">
+                <span>سجل آخر إشعارات تسليم الأوردرات المستلمة:</span>
+                <button
+                  onClick={() => {
+                    notificationService.clearRecentAlerts();
+                    setRecentDeliveryAlerts([]);
+                  }}
+                  className="text-[11px] text-rose-600 hover:underline"
+                >
+                  مسح السجل
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                {recentDeliveryAlerts.slice(0, 6).map((alert) => (
+                  <div
+                    key={alert.id}
+                    className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2"
+                  >
+                    <div>
+                      <p className="font-extrabold text-slate-900 flex items-center gap-1">
+                        <PackageCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>كابتن {alert.courierName}</span>
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        {alert.orderNumber} · <strong className="text-emerald-700">{alert.orderValue} ج</strong> ({alert.paymentMethod})
+                      </p>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                      {alert.timestamp}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* FAST ORDER ENTRY BAR (الاوردرات تضاف قيمه فقط بدون بيانات خاصه بالعميل نظام تشغيل سريع أثناء العمل) */}
         <div className="mt-5 p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 rounded-2xl border-2 border-emerald-500/30">

@@ -17,6 +17,9 @@ import {
   startRepeatingAlarm,
   stopRepeatingAlarm,
 } from '../utils/audio';
+import { db } from './firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { notificationService } from './notificationService';
 
 const STORAGE_KEY = 'pharma_delivery_real_v3';
 const SYNC_CHANNEL_NAME = 'pharma_real_sync_channel';
@@ -130,8 +133,33 @@ class Store {
         this.syncChannel = new BroadcastChannel(SYNC_CHANNEL_NAME);
         this.syncChannel.onmessage = (event) => {
           if (event.data && event.data.type === 'SYNC_STATE') {
+            const prevOrders = this.state.orders;
+            const nextOrders: Order[] = event.data.state.orders || [];
+
+            // Check if any order became delivered from another tab
+            nextOrders.forEach((newOrd) => {
+              if (newOrd.status === 'delivered') {
+                const prev = prevOrders.find((p) => p.id === newOrd.id);
+                if (prev && prev.status !== 'delivered') {
+                  const courier = (event.data.state.couriers || []).find((c: any) => c.id === newOrd.courierId);
+                  const pharmacy = (event.data.state.pharmacies || []).find((p: any) => p.id === newOrd.pharmacyId);
+                  notificationService.notifyOrderDelivered({
+                    order: newOrd,
+                    courier,
+                    pharmacy,
+                  });
+                }
+              }
+            });
+
             this.state = event.data.state;
             this.notify(false, false);
+          } else if (event.data && event.data.type === 'ORDER_DELIVERED') {
+            notificationService.notifyOrderDelivered({
+              order: event.data.order,
+              courier: event.data.courier,
+              pharmacy: event.data.pharmacy,
+            });
           }
         };
       }
@@ -156,6 +184,29 @@ class Store {
             const activeStillExists = serverPharmacies.some(
               (p) => p.id === this.state.activePharmacyId
             );
+
+            // Detect newly delivered orders from cloud polling
+            if (Array.isArray(cloudData.orders)) {
+              const incomingOrders: Order[] = cloudData.orders;
+              incomingOrders.forEach((cloudOrd) => {
+                if (cloudOrd.status === 'delivered') {
+                  const prev = this.state.orders.find((p) => p.id === cloudOrd.id);
+                  if (prev && prev.status !== 'delivered') {
+                    const courier = (cloudData.couriers || this.state.couriers).find(
+                      (c: any) => c.id === cloudOrd.courierId
+                    );
+                    const pharmacy = (serverPharmacies || this.state.pharmacies).find(
+                      (p: any) => p.id === cloudOrd.pharmacyId
+                    );
+                    notificationService.notifyOrderDelivered({
+                      order: cloudOrd,
+                      courier,
+                      pharmacy,
+                    });
+                  }
+                }
+              });
+            }
 
             this.state = {
               ...this.state,
@@ -208,6 +259,25 @@ class Store {
       });
     } catch (err) {
       // Will sync on next cycle
+    }
+
+    // Also persist directly to Cloud Firestore
+    try {
+      if (typeof window !== 'undefined' && db) {
+        setDoc(
+          doc(db, 'system', 'cloud_state'),
+          {
+            pharmacies: this.state.pharmacies,
+            couriers: this.state.couriers,
+            orders: this.state.orders,
+            shiftSummaries: this.state.shiftSummaries,
+            lastUpdated: new Date().toISOString(),
+          },
+          { merge: true }
+        ).catch(() => {});
+      }
+    } catch (e) {
+      // Offline fallback
     }
   }
 
@@ -593,7 +663,26 @@ class Store {
 
     let updatedCouriers = this.state.couriers;
     if (isDeliveredNow) {
-      playCoinSound();
+      const courier = this.state.couriers.find((c) => c.id === order.courierId);
+      const pharmacy = this.state.pharmacies.find((p) => p.id === order.pharmacyId);
+
+      // Trigger Web Notification for the Pharmacist
+      notificationService.notifyOrderDelivered({
+        order: { ...order, status: 'delivered', deliveredAt },
+        courier,
+        pharmacy,
+      });
+
+      // Broadcast explicit delivery event across tabs
+      if (this.syncChannel) {
+        this.syncChannel.postMessage({
+          type: 'ORDER_DELIVERED',
+          order: { ...order, status: 'delivered', deliveredAt },
+          courier,
+          pharmacy,
+        });
+      }
+
       updatedCouriers = this.state.couriers.map((c) => {
         if (c.id === order.courierId) {
           const isCash = order.paymentMethod === 'cash';

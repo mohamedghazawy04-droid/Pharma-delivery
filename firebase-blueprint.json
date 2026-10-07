@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "pharmacy": {
+      "title": "Pharmacy",
+      "description": "Pharmacy branch profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "pharmacistName": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "password": { "type": "string" },
+        "globalDeliveryFee": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "courier": {
+      "title": "Courier",
+      "description": "Delivery representative profile and telemetry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "pharmacyId": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "vehicleType": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "pharmacyId", "name"]
+    },
+    "order": {
+      "title": "Order",
+      "description": "Delivery order item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "pharmacyId": { "type": "string" },
+        "courierId": { "type": "string" },
+        "orderValue": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "deliveryFee": { "type": "number" },
+        "status": { "type": "string" },
+        "isArchived": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "pharmacyId", "courierId", "orderValue"]
+    },
+    "shiftSummary": {
+      "title": "ShiftSummary",
+      "description": "Archived shift and earnings summary",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "pharmacyId": { "type": "string" },
+        "courierId": { "type": "string" },
+        "totalOrdersCount": { "type": "number" },
+        "totalCashCollected": { "type": "number" },
+        "totalDeliveryFees": { "type": "number" },
+        "shiftDate": { "type": "string" }
+      },
+      "required": ["id", "pharmacyId", "courierId"]
+    }
+  },
+  "firestore": {
+    "/pharmacies/{pharmacyId}": {
+      "schema": "pharmacy",
+      "description": "Registered pharmacy branches"
+    },
+    "/couriers/{courierId}": {
+      "schema": "courier",
+      "description": "Delivery couriers belonging to pharmacy branches"
+    },
+    "/orders/{orderId}": {
+      "schema": "order",
+      "description": "Active and completed delivery orders"
+    },
+    "/shiftSummaries/{summaryId}": {
+      "schema": "shiftSummary",
+      "description": "Archived shift summaries and piggy bank records"
+    }
+  }
+}
