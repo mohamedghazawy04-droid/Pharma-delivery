@@ -18,6 +18,7 @@ interface Props {
   pharmacies: Pharmacy[];
   activePharmacyId: string;
   onSelectPharmacy: (id: string) => void;
+  onOpenManagePharmacies?: () => void;
   couriers: CourierProfile[];
   currentCourierId: string;
   onCourierSelect: (id: string) => void;
@@ -32,6 +33,7 @@ export const Header: React.FC<Props> = ({
   pharmacies,
   activePharmacyId,
   onSelectPharmacy,
+  onOpenManagePharmacies,
   couriers,
   currentCourierId,
   onCourierSelect,
@@ -74,6 +76,15 @@ export const Header: React.FC<Props> = ({
                     </option>
                   ))}
                 </select>
+                {onOpenManagePharmacies && (
+                  <button
+                    onClick={onOpenManagePharmacies}
+                    title="إدارة وحذف وإضافة الصيدليات"
+                    className="p-1 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100 rounded-md transition text-[11px] underline"
+                  >
+                    إدارة
+                  </button>
+                )}
               </div>
             )}
           </div>

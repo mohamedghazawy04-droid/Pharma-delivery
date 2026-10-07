@@ -10,6 +10,7 @@ import { TransferOrderModal } from './components/TransferOrderModal';
 import { EditOrderModal } from './components/EditOrderModal';
 import { AuthModal } from './components/AuthModal';
 import { PiggyBankModal } from './components/PiggyBankModal';
+import { ManagePharmaciesModal } from './components/pharmacist/ManagePharmaciesModal';
 import { Order, ShiftSummaryArchive } from './types';
 import { Bike, Plus } from 'lucide-react';
 
@@ -21,6 +22,7 @@ export default function App() {
   const [transferOrder, setTransferOrder] = useState<Order | null>(null);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isManagePharmaciesOpen, setIsManagePharmaciesOpen] = useState(false);
   const [piggyBankSummary, setPiggyBankSummary] = useState<ShiftSummaryArchive | null>(null);
   const [isPiggyBankOpen, setIsPiggyBankOpen] = useState(false);
 
@@ -116,6 +118,7 @@ export default function App() {
         pharmacies={state.pharmacies}
         activePharmacyId={state.activePharmacyId}
         onSelectPharmacy={(id) => store.setActivePharmacy(id)}
+        onOpenManagePharmacies={() => setIsManagePharmaciesOpen(true)}
         couriers={pharmacyCouriers}
         currentCourierId={state.currentCourierId}
         onCourierSelect={(id) => store.setCurrentCourier(id)}
@@ -234,6 +237,15 @@ export default function App() {
         isOpen={isPiggyBankOpen}
         onClose={() => setIsPiggyBankOpen(false)}
         summary={piggyBankSummary}
+      />
+
+      <ManagePharmaciesModal
+        isOpen={isManagePharmaciesOpen}
+        onClose={() => setIsManagePharmaciesOpen(false)}
+        pharmacies={state.pharmacies}
+        activePharmacyId={state.activePharmacyId}
+        couriers={state.couriers}
+        orders={state.orders}
       />
     </div>
   );

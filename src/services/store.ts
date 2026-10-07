@@ -202,6 +202,43 @@ class Store {
     this.notify(true);
   }
 
+  // Delete / Remove Pharmacy (إزالة الصيدلية)
+  public deletePharmacy(pharmacyId: string): { success: boolean; error?: string } {
+    if (this.state.pharmacies.length <= 1) {
+      return {
+        success: false,
+        error: 'لا يمكن حذف الصيدلية الوحيدة في المنظومة. يجب توفر صيدلية واحدة على الأقل.',
+      };
+    }
+
+    const remainingPharmacies = this.state.pharmacies.filter((p) => p.id !== pharmacyId);
+    const newActiveId =
+      this.state.activePharmacyId === pharmacyId
+        ? remainingPharmacies[0].id
+        : this.state.activePharmacyId;
+
+    // Remove associated couriers, orders, and shift summaries for the deleted pharmacy
+    const remainingCouriers = this.state.couriers.filter((c) => c.pharmacyId !== pharmacyId);
+    const remainingOrders = this.state.orders.filter((o) => o.pharmacyId !== pharmacyId);
+    const remainingSummaries = this.state.shiftSummaries.filter(
+      (s) => s.pharmacyId !== pharmacyId
+    );
+
+    this.state = {
+      ...this.state,
+      pharmacies: remainingPharmacies,
+      activePharmacyId: newActiveId,
+      couriers: remainingCouriers,
+      orders: remainingOrders,
+      shiftSummaries: remainingSummaries,
+      currentCourierId: remainingCouriers.find((c) => c.id === this.state.currentCourierId)
+        ? this.state.currentCourierId
+        : remainingCouriers[0]?.id || '',
+    };
+    this.notify(true);
+    return { success: true };
+  }
+
   // Pharmacist Authentication
   public loginPharmacist(password: string): { success: boolean; error?: string } {
     if (password === 'pharmacist123') {

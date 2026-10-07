@@ -34,6 +34,7 @@ import {
 import { store } from '../../services/store';
 import { LiveMap } from '../LiveMap';
 import { AddPharmacyModal } from './AddPharmacyModal';
+import { ManagePharmaciesModal } from './ManagePharmaciesModal';
 import { formatDurationSeconds } from '../../utils/geo';
 
 interface Props {
@@ -66,6 +67,7 @@ export const PharmacistDashboard: React.FC<Props> = ({
   const [editingGlobalFee, setEditingGlobalFee] = useState<number>(pharmacy.globalDeliveryFee || 7);
   const [isEditingFeeOpen, setIsEditingFeeOpen] = useState(false);
   const [isAddPharmacyOpen, setIsAddPharmacyOpen] = useState(false);
+  const [isManagePharmaciesOpen, setIsManagePharmaciesOpen] = useState(false);
 
   // Fast inline order entry states (قيمة فقط لسرعة العمل)
   const [fastOrderValue, setFastOrderValue] = useState('');
@@ -195,7 +197,17 @@ export const PharmacistDashboard: React.FC<Props> = ({
               title="إضافة فرع أو صيدلية جديدة - خاصية حصرية للمدير الصيدلي"
             >
               <Building2 className="w-3.5 h-3.5 text-emerald-700" />
-              <span>+ إضافة صيدلية (المدير الصيدلي)</span>
+              <span>+ إضافة صيدلية</span>
+            </button>
+
+            {/* Manage & Delete Pharmacies Button */}
+            <button
+              onClick={() => setIsManagePharmaciesOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition"
+              title="إدارة وحذف والتبديل بين الصيدليات"
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5 text-slate-600" />
+              <span>إدارة وحذف الصيدليات ({pharmacies.length})</span>
             </button>
 
             <button
@@ -207,6 +219,46 @@ export const PharmacistDashboard: React.FC<Props> = ({
             </button>
           </div>
         </div>
+
+        {/* Quick Pharmacy Switcher Pills Bar */}
+        {pharmacies.length > 1 && (
+          <div className="flex items-center gap-2 overflow-x-auto pt-4 pb-2 border-t border-slate-100">
+            <span className="text-xs font-bold text-slate-500 whitespace-nowrap flex items-center gap-1">
+              <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-600" />
+              <span>التبديل المباشر:</span>
+            </span>
+            {pharmacies.map((p) => {
+              const isCur = p.id === pharmacy.id;
+              const countC = couriers.filter((c) => c.pharmacyId === p.id).length;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => store.setActivePharmacy(p.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition flex items-center gap-1.5 ${
+                    isCur
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  <span>{p.name}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                      isCur ? 'bg-white/20' : 'bg-slate-200'
+                    }`}
+                  >
+                    {countC} مناديب
+                  </span>
+                </button>
+              );
+            })}
+            <button
+              onClick={() => setIsManagePharmaciesOpen(true)}
+              className="px-2.5 py-1 text-xs text-indigo-700 hover:text-indigo-900 font-bold whitespace-nowrap underline"
+            >
+              إدارة وحذف الفروع ⚙️
+            </button>
+          </div>
+        )}
 
         {/* Global Fee Edit popdown */}
         {isEditingFeeOpen && (
@@ -1037,6 +1089,16 @@ export const PharmacistDashboard: React.FC<Props> = ({
       <AddPharmacyModal
         isOpen={isAddPharmacyOpen}
         onClose={() => setIsAddPharmacyOpen(false)}
+      />
+
+      {/* Manage & Delete Pharmacies Modal */}
+      <ManagePharmaciesModal
+        isOpen={isManagePharmaciesOpen}
+        onClose={() => setIsManagePharmaciesOpen(false)}
+        pharmacies={pharmacies}
+        activePharmacyId={pharmacy.id}
+        couriers={couriers}
+        orders={orders}
       />
     </div>
   );
