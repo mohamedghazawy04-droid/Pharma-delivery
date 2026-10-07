@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
 import {
   Coins,
@@ -11,18 +11,36 @@ import {
   TrendingUp,
   Receipt,
   UserCheck,
+  Download,
+  Loader2,
+  FileText,
 } from 'lucide-react';
-import { ShiftSummaryArchive } from '../types';
+import { ShiftSummaryArchive, Pharmacy } from '../types';
+import { store } from '../services/store';
+import {
+  exportShiftSummaryToPdf,
+  printShiftSummaryDocument,
+} from '../services/pdfExportService';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   summary: ShiftSummaryArchive | null;
+  pharmacy?: Pharmacy;
 }
 
-export const PiggyBankModal: React.FC<Props> = ({ isOpen, onClose, summary }) => {
+export const PiggyBankModal: React.FC<Props> = ({
+  isOpen,
+  onClose,
+  summary,
+  pharmacy,
+}) => {
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportSuccess, setExportSuccess] = useState(false);
+
   useEffect(() => {
     if (isOpen && summary) {
+      setExportSuccess(false);
       // Fire confetti burst
       try {
         confetti({
@@ -39,6 +57,8 @@ export const PiggyBankModal: React.FC<Props> = ({ isOpen, onClose, summary }) =>
 
   if (!isOpen || !summary) return null;
 
+  const currentPharmacy = pharmacy || store.getActivePharmacy();
+
   const startDate = new Date(summary.startTime);
   const endDate = new Date(summary.endTime);
 
@@ -54,8 +74,22 @@ export const PiggyBankModal: React.FC<Props> = ({ isOpen, onClose, summary }) =>
   const durationHours = Math.floor(durationMs / (1000 * 60 * 60));
   const durationMinutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
 
+  const handleExportPdf = async () => {
+    setIsExporting(true);
+    setExportSuccess(false);
+    try {
+      await exportShiftSummaryToPdf(summary, currentPharmacy);
+      setExportSuccess(true);
+      setTimeout(() => setExportSuccess(false), 4000);
+    } catch (err) {
+      console.error('Failed to export PDF:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handlePrint = () => {
-    window.print();
+    printShiftSummaryDocument(summary, currentPharmacy);
   };
 
   return (
@@ -207,20 +241,53 @@ export const PiggyBankModal: React.FC<Props> = ({ isOpen, onClose, summary }) =>
             </div>
           )}
 
+          {/* Export Success Banner */}
+          {exportSuccess && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in duration-150">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>تم تحميل ملف الـ PDF بنجاح وحفظه على جهازك!</span>
+            </div>
+          )}
+
           {/* Action Footer */}
-          <div className="flex items-center justify-between gap-3 pt-2">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                disabled={isExporting}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition disabled:opacity-50"
+              >
+                {isExporting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>توليد PDF...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-3.5 h-3.5" />
+                    <span>تصدير ملف PDF</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrint}
+                className="flex items-center justify-center gap-1.5 px-3 py-2.5 border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 transition"
+                title="طباعة إيصال ورقي رسمي"
+              >
+                <Printer className="w-3.5 h-3.5 text-slate-600" />
+                <span>طباعة</span>
+              </button>
+            </div>
+
             <button
-              onClick={handlePrint}
-              className="flex items-center gap-2 px-4 py-2 border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 transition"
-            >
-              <Printer className="w-4 h-4 text-slate-600" />
-              <span>طباعة إيصال الشيفت</span>
-            </button>
-            <button
+              type="button"
               onClick={onClose}
-              className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow transition"
+              className="w-full sm:w-auto px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow transition"
             >
-              إغلاق وحفظ في السجل
+              إغلاق وحفظ
             </button>
           </div>
         </div>

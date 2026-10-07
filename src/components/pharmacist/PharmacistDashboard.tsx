@@ -28,6 +28,7 @@ import {
   BellRing,
   PackageCheck,
   Volume2,
+  FileText,
 } from 'lucide-react';
 import {
   CourierProfile,
@@ -41,6 +42,7 @@ import { notificationService, DeliveryAlertItem } from '../../services/notificat
 import { LiveMap } from '../LiveMap';
 import { AddPharmacyModal } from './AddPharmacyModal';
 import { ManagePharmaciesModal } from './ManagePharmaciesModal';
+import { ShiftPdfModal } from './ShiftPdfModal';
 import { formatDurationSeconds } from '../../utils/geo';
 
 interface Props {
@@ -76,6 +78,8 @@ export const PharmacistDashboard: React.FC<Props> = ({
   const [isEditingFeeOpen, setIsEditingFeeOpen] = useState(false);
   const [isAddPharmacyOpen, setIsAddPharmacyOpen] = useState(false);
   const [isManagePharmaciesOpen, setIsManagePharmaciesOpen] = useState(false);
+  const [isShiftPdfModalOpen, setIsShiftPdfModalOpen] = useState(false);
+  const [pdfModalSummary, setPdfModalSummary] = useState<ShiftSummaryArchive | null>(null);
 
   // Fast inline order entry states (قيمة فقط لسرعة العمل)
   const [fastOrderValue, setFastOrderValue] = useState('');
@@ -1149,13 +1153,27 @@ export const PharmacistDashboard: React.FC<Props> = ({
       {/* Tab 4: Shift Summaries Log */}
       {activeTab === 'shifts' && (
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
-          <div className="pb-3 border-b border-slate-100">
-            <h2 className="text-base font-extrabold text-slate-900">
-              سجل الشفتات المنتهية وإغلاقات الحصالة
-            </h2>
-            <p className="text-xs text-slate-500">
-              أرشيف جميع الشفتات السابقة التي تم إنهاؤها مع تفاصيل الأرباح والمبالغ المحصلة
-            </p>
+          <div className="pb-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-extrabold text-slate-900">
+                سجل الشفتات المنتهية وإغلاقات الحصالة
+              </h2>
+              <p className="text-xs text-slate-500">
+                أرشيف جميع الشفتات السابقة التي تم إنهاؤها مع تفاصيل الأرباح والمبالغ المحصلة
+              </p>
+            </div>
+            {pharmacyShiftSummaries.length > 0 && (
+              <button
+                onClick={() => {
+                  setPdfModalSummary(null);
+                  setIsShiftPdfModalOpen(true);
+                }}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition self-start sm:self-auto"
+              >
+                <FileText className="w-4 h-4" />
+                <span>تصدير السجل المالي المجمع (PDF)</span>
+              </button>
+            )}
           </div>
 
           {pharmacyShiftSummaries.length === 0 ? (
@@ -1193,8 +1211,8 @@ export const PharmacistDashboard: React.FC<Props> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
-                    <div className="text-left">
+                  <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end flex-wrap">
+                    <div className="text-left pl-2">
                       <span className="text-[11px] text-amber-800 font-semibold block">
                         أرباح المندوب (الحصالة)
                       </span>
@@ -1203,16 +1221,31 @@ export const PharmacistDashboard: React.FC<Props> = ({
                       </span>
                     </div>
 
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenPiggyBank(summary);
-                      }}
-                      className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs transition"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>عرض الحصالة</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPdfModalSummary(summary);
+                          setIsShiftPdfModalOpen(true);
+                        }}
+                        className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1 transition"
+                        title="تصدير ملخص هذا الشيفت إلى ملف PDF"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>تصدير PDF</span>
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenPiggyBank(summary);
+                        }}
+                        className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs transition"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>عرض الحصالة</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1261,6 +1294,15 @@ export const PharmacistDashboard: React.FC<Props> = ({
         activePharmacyId={pharmacy.id}
         couriers={couriers}
         orders={orders}
+      />
+
+      {/* Export Shift Summary PDF Modal */}
+      <ShiftPdfModal
+        isOpen={isShiftPdfModalOpen}
+        onClose={() => setIsShiftPdfModalOpen(false)}
+        summary={pdfModalSummary}
+        pharmacy={pharmacy}
+        allPharmacySummaries={pharmacyShiftSummaries}
       />
     </div>
   );

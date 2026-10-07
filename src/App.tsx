@@ -245,6 +245,7 @@ export default function App() {
         isOpen={isPiggyBankOpen}
         onClose={() => setIsPiggyBankOpen(false)}
         summary={piggyBankSummary}
+        pharmacy={activePharmacy}
       />
 
       <ManagePharmaciesModal
