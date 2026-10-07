@@ -1,0 +1,10 @@
+{
+  "name": "فارما ديليفري - إدارة وتتبع مناديب الصيدلية",
+  "description": "نظام ذكي لربط الصيدلي بمناديب التوصيل، حساب عمولات ومحافظ الأوردرات، أرشفة سحابية، تتبع حي على الخريطة وإنذار توقف بعد 5 دقائق.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
