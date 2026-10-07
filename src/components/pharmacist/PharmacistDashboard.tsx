@@ -94,12 +94,10 @@ export const PharmacistDashboard: React.FC<Props> = ({
     e.preventDefault();
     const val = parseFloat(fastOrderValue);
     if (isNaN(val) || val <= 0) {
-      alert('برجاء كتابة قيمة الأوردر بالجنيه');
       return;
     }
     const targetCourier = fastCourierId || pharmacyCouriers[0]?.id;
     if (!targetCourier) {
-      alert('برجاء تسجيل مندوب أولاً لإسناد الأوردر له');
       onOpenAuthModal();
       return;
     }
@@ -124,31 +122,19 @@ export const PharmacistDashboard: React.FC<Props> = ({
     const courier = pharmacyCouriers.find((c) => c.id === courierId);
     if (!courier) return;
 
-    const confirmEnd = window.confirm(
-      `هل تريد إنهاء شيفت الكابتن (${courier.name})؟ سيتم عرض الحصالة الذهبية وإجمالي العمل وحفظ السجل سحابياً.`
-    );
-    if (confirmEnd) {
-      const summary = store.endCourierShift(courierId);
-      if (summary) {
-        onOpenPiggyBank(summary);
-      }
+    const summary = store.endCourierShift(courierId);
+    if (summary) {
+      onOpenPiggyBank(summary);
     }
   };
 
   const handleArchiveCourierOrders = (courierId: string) => {
     const courier = pharmacyCouriers.find((c) => c.id === courierId);
+    if (!courier) return;
     const count = activeOrders.filter((o) => o.courierId === courierId).length;
-    if (count === 0) {
-      alert(`لا توجد أوردرات نشطة حالياً عند الكابتن ${courier?.name}`);
-      return;
-    }
+    if (count === 0) return;
 
-    const confirmArchive = window.confirm(
-      `سيتم حفظ (${count}) أوردر للمندوب (${courier?.name}) سحابياً بالوقت والتاريخ والقيمة، وستظهر شاشته فارغة تماماً. هل تريد المتابعة؟`
-    );
-    if (confirmArchive) {
-      store.archiveCourierOrders(courierId);
-    }
+    store.archiveCourierOrders(courierId);
   };
 
   return (

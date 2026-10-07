@@ -69,7 +69,7 @@ export const LoginScreen: React.FC<Props> = ({
   const handleRegisterCourier = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCourierName || !newCourierPhone || !newCourierPassword) {
-      alert('برجاء استكمال كافة البيانات الإلزامية للمندوب');
+      setCourierError('برجاء استكمال كافة البيانات الإلزامية للمندوب');
       return;
     }
 

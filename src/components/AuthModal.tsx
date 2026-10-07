@@ -12,6 +12,7 @@ import {
   Check,
   CreditCard,
   CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 import { CourierProfile, Pharmacy, UserRole } from '../types';
 import { store } from '../services/store';
@@ -62,6 +63,8 @@ export const AuthModal: React.FC<Props> = ({
   const [newPharmacyPhone, setNewPharmacyPhone] = useState('');
   const [newPharmacyAddress, setNewPharmacyAddress] = useState('');
   const [newPharmacyFee, setNewPharmacyFee] = useState(7);
+  const [courierRegError, setCourierRegError] = useState('');
+  const [newPharmacyError, setNewPharmacyError] = useState('');
 
   if (!isOpen) return null;
 
@@ -96,7 +99,7 @@ export const AuthModal: React.FC<Props> = ({
   const handleRegisterCourier = (e: React.FormEvent) => {
     e.preventDefault();
     if (!courierName || !courierPhone || !courierPassword) {
-      alert('برجاء استكمال الاسم ورقم الهاتف وكلمة المرور للمندوب');
+      setCourierRegError('برجاء استكمال الاسم ورقم الهاتف وكلمة المرور للمندوب');
       return;
     }
 
@@ -116,6 +119,7 @@ export const AuthModal: React.FC<Props> = ({
     setCourierPassword('');
     setCourierNationalId('');
     setVehicleNumber('');
+    setCourierRegError('');
     onClose();
   };
 
@@ -123,7 +127,7 @@ export const AuthModal: React.FC<Props> = ({
   const handleAddPharmacy = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPharmacyName) {
-      alert('برجاء إدخال اسم الصيدلية');
+      setNewPharmacyError('برجاء إدخال اسم الصيدلية');
       return;
     }
 
@@ -139,6 +143,7 @@ export const AuthModal: React.FC<Props> = ({
     setNewPharmacistName('');
     setNewPharmacyPhone('');
     setNewPharmacyAddress('');
+    setNewPharmacyError('');
     store.setActivePharmacy(created.id);
     store.setRole('pharmacist');
     onClose();
@@ -365,6 +370,12 @@ export const AuthModal: React.FC<Props> = ({
           {/* TAB 3: Courier Registration with Password & Pharmacy selection */}
           {activeTab === 'reg_courier' && (
             <form onSubmit={handleRegisterCourier} className="space-y-3.5">
+              {courierRegError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{courierRegError}</span>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   الصيدلية التابع لها المندوب *
@@ -513,6 +524,13 @@ export const AuthModal: React.FC<Props> = ({
                   لكل صيدلية مناديبها الخاصين بها وأوردراتها المنفصلة وحصالتها السحابية المستقلة
                 </p>
               </div>
+
+              {newPharmacyError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{newPharmacyError}</span>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">

@@ -14,6 +14,7 @@ import {
   Coins,
   AlertTriangle,
   User,
+  Loader2,
 } from 'lucide-react';
 import { Pharmacy, CourierProfile, Order } from '../../types';
 import { store } from '../../services/store';
@@ -37,48 +38,73 @@ export const ManagePharmaciesModal: React.FC<Props> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'list' | 'add'>('list');
 
-  // New Pharmacy form
+  // Confirmation state for deleting a pharmacy (In-App dialog, no window.confirm!)
+  const [pharmacyToDelete, setPharmacyToDelete] = useState<Pharmacy | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
+  // New Pharmacy form state
   const [name, setName] = useState('');
   const [pharmacistName, setPharmacistName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [deliveryFee, setDeliveryFee] = useState<number>(7);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [formError, setFormError] = useState('');
 
   if (!isOpen) return null;
 
-  const handleSwitchPharmacy = (pharmacyId: string) => {
-    store.setActivePharmacy(pharmacyId);
+  const showFeedback = (type: 'success' | 'error', text: string) => {
+    setStatusMessage({ type, text });
+    setTimeout(() => {
+      setStatusMessage(null);
+    }, 4500);
   };
 
-  const handleDeletePharmacy = (pharmacy: Pharmacy) => {
+  const handleSwitchPharmacy = (pharmacyId: string) => {
+    store.setActivePharmacy(pharmacyId);
+    const target = pharmacies.find((p) => p.id === pharmacyId);
+    showFeedback('success', `تم التحويل بنجاح للعمل بصيدلية: ${target?.name || ''}`);
+  };
+
+  const initiateDelete = (pharmacy: Pharmacy) => {
     if (pharmacies.length <= 1) {
-      alert('لا يمكن حذف الصيدلية الوحيدة في المنظومة. يجب توفر صيدلية واحدة على الأقل.');
+      showFeedback(
+        'error',
+        'لا يمكن حذف الصيدلية الوحيدة المتبقية في المنظومة. يجب أن يتوفر فرع واحد على الأقل.'
+      );
       return;
     }
+    setPharmacyToDelete(pharmacy);
+  };
 
-    const pharmaCouriers = couriers.filter((c) => c.pharmacyId === pharmacy.id);
-    const pharmaOrders = orders.filter((o) => o.pharmacyId === pharmacy.id);
+  const confirmDelete = async () => {
+    if (!pharmacyToDelete) return;
 
-    const confirmText =
-      `هل أنت متأكد من حذف (${pharmacy.name})؟\n` +
-      `سيتم إزالة الصيدلية وبياناتها${
-        pharmaCouriers.length > 0 ? ` وعدد (${pharmaCouriers.length}) مناديب تابعين لها` : ''
-      }${pharmaOrders.length > 0 ? ` وعدد (${pharmaOrders.length}) أوردرات` : ''}.\n\n` +
-      `هل تريد تأكيد الحذف نهائياً؟`;
+    setIsDeleting(true);
+    try {
+      const deletedName = pharmacyToDelete.name;
+      const res = store.deletePharmacy(pharmacyToDelete.id);
 
-    if (window.confirm(confirmText)) {
-      const res = store.deletePharmacy(pharmacy.id);
-      if (!res.success) {
-        alert(res.error || 'تعذر حذف الصيدلية');
+      if (res.success) {
+        showFeedback('success', `تم حذف فرع (${deletedName}) بنجاح ومزامنة البيانات سحابياً.`);
+        setPharmacyToDelete(null);
+      } else {
+        showFeedback('error', res.error || 'تعذر إتمام حذف الصيدلية');
       }
+    } catch (err) {
+      showFeedback('error', 'حدث خطأ غير متوقع أثناء حذف الصيدلية');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      setErrorMsg('برجاء كتابة اسم الصيدلية أو الفرع');
+      setFormError('برجاء كتابة اسم الصيدلية أو الفرع الجديد');
       return;
     }
 
@@ -95,9 +121,18 @@ export const ManagePharmaciesModal: React.FC<Props> = ({
     setPharmacistName('');
     setPhone('');
     setAddress('');
-    setErrorMsg('');
+    setFormError('');
     setActiveTab('list');
+    showFeedback('success', `تمت إضافة (${created.name}) بنجاح والتحويل إليها كصيدلية نشطة!`);
   };
+
+  // Helper counts for pending deletion pharmacy
+  const pendingCouriersCount = pharmacyToDelete
+    ? couriers.filter((c) => c.pharmacyId === pharmacyToDelete.id).length
+    : 0;
+  const pendingOrdersCount = pharmacyToDelete
+    ? orders.filter((o) => o.pharmacyId === pharmacyToDelete.id && !o.isArchived).length
+    : 0;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -111,7 +146,7 @@ export const ManagePharmaciesModal: React.FC<Props> = ({
             <div>
               <h3 className="font-extrabold text-base">إدارة الصيدليات والفروع والتبديل</h3>
               <p className="text-emerald-100 text-xs">
-                إضافة وحذف الصيدليات والتنقل السلس بينها (خاصية المدير الصيدلي)
+                إضافة وحذف الصيدليات والتنقل السلس بينها مع الحفظ السحابي
               </p>
             </div>
           </div>
@@ -123,10 +158,39 @@ export const ManagePharmaciesModal: React.FC<Props> = ({
           </button>
         </div>
 
+        {/* Status / Feedback Banner */}
+        {statusMessage && (
+          <div
+            className={`px-6 py-3 text-xs font-bold flex items-center justify-between gap-2 transition-all ${
+              statusMessage.type === 'success'
+                ? 'bg-emerald-50 text-emerald-900 border-b border-emerald-200'
+                : 'bg-rose-50 text-rose-900 border-b border-rose-200'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {statusMessage.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              )}
+              <span>{statusMessage.text}</span>
+            </div>
+            <button
+              onClick={() => setStatusMessage(null)}
+              className="text-slate-400 hover:text-slate-600 p-1"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Tab Switcher */}
         <div className="flex border-b border-slate-200 bg-slate-50 text-xs font-bold">
           <button
-            onClick={() => setActiveTab('list')}
+            onClick={() => {
+              setActiveTab('list');
+              setPharmacyToDelete(null);
+            }}
             className={`flex-1 py-3 px-4 border-b-2 transition flex items-center justify-center gap-2 ${
               activeTab === 'list'
                 ? 'border-emerald-600 text-emerald-800 bg-white font-black'
@@ -137,7 +201,10 @@ export const ManagePharmaciesModal: React.FC<Props> = ({
             <span>قائمة الصيدليات المسجلة ({pharmacies.length})</span>
           </button>
           <button
-            onClick={() => setActiveTab('add')}
+            onClick={() => {
+              setActiveTab('add');
+              setPharmacyToDelete(null);
+            }}
             className={`flex-1 py-3 px-4 border-b-2 transition flex items-center justify-center gap-2 ${
               activeTab === 'add'
                 ? 'border-emerald-600 text-emerald-800 bg-white font-black'
@@ -149,7 +216,88 @@ export const ManagePharmaciesModal: React.FC<Props> = ({
           </button>
         </div>
 
-        <div className="p-6 max-h-[75vh] overflow-y-auto">
+        <div className="p-6 max-h-[75vh] overflow-y-auto relative">
+          {/* IN-APP REAL DELETION CONFIRMATION OVERLAY (Replaces blocked window.confirm) */}
+          {pharmacyToDelete && (
+            <div className="mb-6 p-5 bg-rose-50/90 border-2 border-rose-300 rounded-2xl shadow-lg animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 bg-rose-600 text-white rounded-2xl shadow-sm shrink-0">
+                  <Trash2 className="w-6 h-6 animate-pulse" />
+                </div>
+                <div className="space-y-2 flex-1">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-black text-rose-950 text-sm flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-rose-600" />
+                      تأكيد حذف الصيدلية نهائياً من المنظومة
+                    </h4>
+                    <span className="text-[10px] bg-rose-200 text-rose-800 font-extrabold px-2 py-0.5 rounded-full">
+                      إجراء نهائي
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-rose-900 font-bold leading-relaxed">
+                    هل أنت متأكد من رغبتك في حذف الصيدلية:
+                    <span className="block text-sm font-black text-rose-950 my-1 bg-white/80 p-2 rounded-xl border border-rose-200">
+                      🏢 {pharmacyToDelete.name}
+                    </span>
+                  </p>
+
+                  <div className="text-[11px] text-rose-800 space-y-1 bg-rose-100/70 p-2.5 rounded-xl border border-rose-200">
+                    <p className="flex items-center gap-1.5 font-semibold">
+                      <span>• العنوان:</span>
+                      <strong>{pharmacyToDelete.address}</strong>
+                    </p>
+                    {pendingCouriersCount > 0 && (
+                      <p className="flex items-center gap-1.5 text-rose-900 font-bold">
+                        <Bike className="w-3.5 h-3.5 text-rose-700" />
+                        <span>سيتم إزالة ({pendingCouriersCount}) مناديب مرتبطين بهذا الفرع.</span>
+                      </p>
+                    )}
+                    {pendingOrdersCount > 0 && (
+                      <p className="flex items-center gap-1.5 text-rose-900 font-bold">
+                        <Package className="w-3.5 h-3.5 text-rose-700" />
+                        <span>سيتم إزالة ({pendingOrdersCount}) أوردرات نشطة تابعة للفرع.</span>
+                      </p>
+                    )}
+                    <p className="text-rose-700 font-medium pt-1">
+                      ⚠️ سيتم حذف الفرع وبياناته من السحابة المركزية لجميع المستخدمين فوراً.
+                    </p>
+                  </div>
+
+                  {/* Confirmation Buttons */}
+                  <div className="flex items-center gap-2 pt-2 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setPharmacyToDelete(null)}
+                      disabled={isDeleting}
+                      className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-xl text-xs font-bold transition shadow-xs"
+                    >
+                      إلغاء والاحتفاظ بالصيدلية
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmDelete}
+                      disabled={isDeleting}
+                      className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-md transition flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {isDeleting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>جاري الحذف السحابي...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="w-4 h-4" />
+                          <span>نعم، حذف الصيدلية الآن</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAB 1: List & Switch & Delete */}
           {activeTab === 'list' && (
             <div className="space-y-4">
@@ -157,11 +305,14 @@ export const ManagePharmaciesModal: React.FC<Props> = ({
                 <div className="flex items-center gap-2">
                   <ArrowRightLeft className="w-4 h-4 text-emerald-700 shrink-0" />
                   <span>
-                    اضغط على <strong>«التبديل والعمل بها»</strong> للتحويل الفوري لأي صيدلية وعرض مناديبها وأوردراتها.
+                    اضغط على <strong>«التبديل والعمل بها»</strong> للتحويل الفوري لأي صيدلية، أو اضغط زر الحذف لحذف أي فرع مع التأكيد الفوري.
                   </span>
                 </div>
                 <button
-                  onClick={() => setActiveTab('add')}
+                  onClick={() => {
+                    setActiveTab('add');
+                    setPharmacyToDelete(null);
+                  }}
                   className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shrink-0"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -176,12 +327,15 @@ export const ManagePharmaciesModal: React.FC<Props> = ({
                   const pharmaOrders = orders.filter(
                     (o) => o.pharmacyId === pharmacy.id && !o.isArchived
                   );
+                  const isBeingDeleted = pharmacyToDelete?.id === pharmacy.id;
 
                   return (
                     <div
                       key={pharmacy.id}
                       className={`rounded-2xl p-4 border transition-all ${
-                        isActive
+                        isBeingDeleted
+                          ? 'bg-rose-50/50 border-rose-400 ring-2 ring-rose-400/30'
+                          : isActive
                           ? 'bg-emerald-50/40 border-emerald-400 shadow-sm ring-2 ring-emerald-500/20'
                           : 'bg-white border-slate-200 hover:border-slate-300'
                       }`}
@@ -253,20 +407,21 @@ export const ManagePharmaciesModal: React.FC<Props> = ({
 
                           {/* Delete Pharmacy Button */}
                           <button
-                            onClick={() => handleDeletePharmacy(pharmacy)}
+                            onClick={() => initiateDelete(pharmacy)}
                             disabled={pharmacies.length <= 1}
                             title={
                               pharmacies.length <= 1
                                 ? 'لا يمكن حذف الصيدلية الوحيدة في المنظومة'
-                                : 'حذف هذه الصيدلية نهائياً'
+                                : 'حذف هذه الصيدلية نهائياً مع التأكيد'
                             }
-                            className={`p-2 rounded-xl transition flex items-center justify-center ${
+                            className={`p-2 rounded-xl transition flex items-center justify-center gap-1 text-xs font-bold ${
                               pharmacies.length <= 1
                                 ? 'text-slate-300 bg-slate-100 cursor-not-allowed'
                                 : 'text-rose-600 hover:bg-rose-50 hover:text-rose-700 border border-rose-200'
                             }`}
                           >
                             <Trash2 className="w-4 h-4" />
+                            <span className="hidden sm:inline">حذف</span>
                           </button>
                         </div>
                       </div>
@@ -286,14 +441,14 @@ export const ManagePharmaciesModal: React.FC<Props> = ({
                   إضافة فرع أو صيدلية جديدة واعتمادها فوراً
                 </div>
                 <p className="text-[11px] text-emerald-800">
-                  بمجرد الإضافة، يمكنك التبديل إليها وإضافة مناديبها الخاصين بها وتلقي أوردراتها المستقلة.
+                  بمجرد الإضافة، يتم حفظ الفرع سحابياً والتحويل للعمل به وتلقي أوردراته ومناديبه المستقلين.
                 </p>
               </div>
 
-              {errorMsg && (
+              {formError && (
                 <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{errorMsg}</span>
+                  <span>{formError}</span>
                 </div>
               )}
 
@@ -307,7 +462,7 @@ export const ManagePharmaciesModal: React.FC<Props> = ({
                   value={name}
                   onChange={(e) => {
                     setName(e.target.value);
-                    setErrorMsg('');
+                    setFormError('');
                   }}
                   placeholder="مثال: صيدلية الأمل - فرع 2"
                   className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-emerald-500 focus:outline-hidden"

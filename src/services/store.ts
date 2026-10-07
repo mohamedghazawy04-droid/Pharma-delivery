@@ -33,30 +33,55 @@ interface AppState {
   authenticatedCourierId: string | null;
 }
 
-// Clean initial pharmacy without fake dummy couriers or fake orders
-const DEFAULT_INITIAL_PHARMACY: Pharmacy = {
-  id: 'pharma-main',
-  name: 'صيدلية النور والشفاء',
-  pharmacistName: 'د. صيدلي',
-  phone: '01012345678',
-  address: 'شارع التحرير - الدقي، الجيزة',
-  password: 'pharmacist123', // As required by user
-  globalDeliveryFee: 7, // 7 EGP per order
-  coordinates: PHARMACY_BASE_LOCATION,
-  createdAt: new Date().toISOString(),
-};
+// Clean initial pharmacies without fake dummy couriers or fake orders
+const DEFAULT_INITIAL_PHARMACIES: Pharmacy[] = [
+  {
+    id: 'pharma-main',
+    name: 'صيدلية النور والشفاء',
+    pharmacistName: 'د. صيدلي',
+    phone: '01012345678',
+    address: 'شارع التحرير - الدقي، الجيزة',
+    password: 'pharmacist123', // As required by user
+    globalDeliveryFee: 7, // 7 EGP per order
+    coordinates: PHARMACY_BASE_LOCATION,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'pharma-branch-2',
+    name: 'صيدلية الأمل والشفاء (فرع 2)',
+    pharmacistName: 'د. أحمد',
+    phone: '01123456789',
+    address: 'شارع مصدق - المهندسين، الجيزة',
+    password: 'pharmacist123',
+    globalDeliveryFee: 7,
+    coordinates: {
+      lat: 30.055,
+      lng: 31.205,
+      address: 'شارع مصدق - المهندسين، الجيزة',
+    },
+    createdAt: new Date().toISOString(),
+  },
+];
 
 function loadInitialState(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed.pharmacies && parsed.pharmacies.length > 0) {
+      if (parsed.pharmacies && Array.isArray(parsed.pharmacies) && parsed.pharmacies.length > 0) {
+        const currentPharmacies: Pharmacy[] = parsed.pharmacies;
+        const activeStillExists = currentPharmacies.some(
+          (p) => p.id === parsed.activePharmacyId
+        );
+        const finalActiveId = activeStillExists
+          ? parsed.activePharmacyId
+          : currentPharmacies[0].id;
+
         return {
           role: parsed.role || 'pharmacist',
-          activePharmacyId: parsed.activePharmacyId || parsed.pharmacies[0].id,
+          activePharmacyId: finalActiveId,
           currentCourierId: parsed.currentCourierId || '',
-          pharmacies: parsed.pharmacies,
+          pharmacies: currentPharmacies,
           couriers: parsed.couriers || [], // Real data only
           orders: parsed.orders || [], // Real data only
           shiftSummaries: parsed.shiftSummaries || [],
@@ -69,12 +94,12 @@ function loadInitialState(): AppState {
     console.warn('Failed to parse state from localStorage:', e);
   }
 
-  // Pure clean state with NO fake orders and NO fake couriers
+  // Pure clean state with both default pharmacies, NO fake orders and NO fake couriers
   return {
     role: 'pharmacist',
-    activePharmacyId: DEFAULT_INITIAL_PHARMACY.id,
+    activePharmacyId: DEFAULT_INITIAL_PHARMACIES[0].id,
     currentCourierId: '',
-    pharmacies: [DEFAULT_INITIAL_PHARMACY],
+    pharmacies: DEFAULT_INITIAL_PHARMACIES,
     couriers: [], // Empty, no fake couriers!
     orders: [], // Empty, no fake orders!
     shiftSummaries: [],
@@ -88,11 +113,15 @@ class Store {
   private listeners: Set<() => void> = new Set();
   private syncChannel: BroadcastChannel | null = null;
   private tickerInterval: number | null = null;
+  private cloudPollInterval: number | null = null;
+  private lastCloudTimestamp = '';
 
   constructor() {
     this.state = loadInitialState();
     this.initSyncChannel();
     this.startRealStoppageTicker();
+    this.fetchCloudData();
+    this.startCloudPolling();
   }
 
   private initSyncChannel() {
@@ -102,7 +131,7 @@ class Store {
         this.syncChannel.onmessage = (event) => {
           if (event.data && event.data.type === 'SYNC_STATE') {
             this.state = event.data.state;
-            this.notify(false);
+            this.notify(false, false);
           }
         };
       }
@@ -111,7 +140,78 @@ class Store {
     }
   }
 
-  private persistAndBroadcast(broadcast = true) {
+  // Fetch from central cloud database (authoritative source of truth)
+  public async fetchCloudData(): Promise<void> {
+    try {
+      const res = await fetch('/api/data');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          const cloudData = json.data;
+          const serverPharmacies: Pharmacy[] = Array.isArray(cloudData.pharmacies)
+            ? cloudData.pharmacies
+            : [];
+
+          if (serverPharmacies.length > 0) {
+            const activeStillExists = serverPharmacies.some(
+              (p) => p.id === this.state.activePharmacyId
+            );
+
+            this.state = {
+              ...this.state,
+              pharmacies: serverPharmacies,
+              couriers: Array.isArray(cloudData.couriers) ? cloudData.couriers : this.state.couriers,
+              orders: Array.isArray(cloudData.orders) ? cloudData.orders : this.state.orders,
+              shiftSummaries: Array.isArray(cloudData.shiftSummaries)
+                ? cloudData.shiftSummaries
+                : this.state.shiftSummaries,
+              activePharmacyId: activeStillExists
+                ? this.state.activePharmacyId
+                : serverPharmacies[0]?.id || 'pharma-main',
+            };
+
+            this.lastCloudTimestamp = cloudData.lastUpdated || '';
+
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+            } catch (e) {}
+
+            this.listeners.forEach((listener) => listener());
+          }
+        }
+      }
+    } catch (err) {
+      // Offline fallback
+    }
+  }
+
+  private startCloudPolling() {
+    if (typeof window === 'undefined') return;
+    if (this.cloudPollInterval) return;
+    this.cloudPollInterval = window.setInterval(() => {
+      this.fetchCloudData();
+    }, 2500);
+  }
+
+  // Send updates to cloud server
+  private async pushToCloudServer() {
+    try {
+      await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pharmacies: this.state.pharmacies,
+          couriers: this.state.couriers,
+          orders: this.state.orders,
+          shiftSummaries: this.state.shiftSummaries,
+        }),
+      });
+    } catch (err) {
+      // Will sync on next cycle
+    }
+  }
+
+  private persistAndBroadcast(broadcast = true, syncCloud = true) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
       if (broadcast && this.syncChannel) {
@@ -123,10 +223,14 @@ class Store {
     } catch (e) {
       console.error('Failed to save state to localStorage:', e);
     }
+
+    if (syncCloud) {
+      this.pushToCloudServer();
+    }
   }
 
-  private notify(broadcast = true) {
-    this.persistAndBroadcast(broadcast);
+  private notify(broadcast = true, syncCloud = true) {
+    this.persistAndBroadcast(broadcast, syncCloud);
     this.listeners.forEach((listener) => listener());
   }
 
@@ -144,7 +248,7 @@ class Store {
   // Active Pharmacy Helper
   public getActivePharmacy(): Pharmacy {
     const ph = this.state.pharmacies.find((p) => p.id === this.state.activePharmacyId);
-    return ph || this.state.pharmacies[0] || DEFAULT_INITIAL_PHARMACY;
+    return ph || this.state.pharmacies[0] || DEFAULT_INITIAL_PHARMACIES[0];
   }
 
   public setActivePharmacy(pharmacyId: string) {
@@ -187,7 +291,22 @@ class Store {
       pharmacies: [...this.state.pharmacies, newPharmacy],
       activePharmacyId: newPharmacy.id,
     };
-    this.notify(true);
+    this.notify(true, false);
+
+    // Persist to central cloud storage immediately
+    fetch('/api/pharmacy/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newPharmacy),
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success && res.data) {
+          this.lastCloudTimestamp = res.data.lastUpdated || '';
+        }
+      })
+      .catch((err) => console.warn('Cloud pharmacy add sync error:', err));
+
     return newPharmacy;
   }
 
@@ -202,7 +321,7 @@ class Store {
     this.notify(true);
   }
 
-  // Delete / Remove Pharmacy (إزالة الصيدلية)
+  // Delete / Remove Pharmacy (إزالة الصيدلية نهائياً)
   public deletePharmacy(pharmacyId: string): { success: boolean; error?: string } {
     if (this.state.pharmacies.length <= 1) {
       return {
@@ -235,7 +354,24 @@ class Store {
         ? this.state.currentCourierId
         : remainingCouriers[0]?.id || '',
     };
-    this.notify(true);
+
+    // Update local storage, broadcast to open tabs, and sync with cloud immediately
+    this.notify(true, true);
+
+    // Call server delete API directly to remove from cloud_store.json
+    fetch('/api/pharmacy/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pharmacyId }),
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success && res.data) {
+          this.lastCloudTimestamp = res.data.lastUpdated || '';
+        }
+      })
+      .catch((err) => console.warn('Cloud pharmacy delete sync error:', err));
+
     return { success: true };
   }
 

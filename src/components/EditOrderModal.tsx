@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Edit3, DollarSign, Bike, Check, CreditCard, Banknote, Send, Sparkles } from 'lucide-react';
+import { X, Edit3, DollarSign, Bike, Check, CreditCard, Banknote, Send, Sparkles, AlertTriangle } from 'lucide-react';
 import { CourierProfile, Order, PaymentMethod } from '../types';
 import { store } from '../services/store';
 
@@ -21,6 +21,7 @@ export const EditOrderModal: React.FC<Props> = ({
   const [courierId, setCourierId] = useState('');
   const [deliveryFee, setDeliveryFee] = useState<number>(7);
   const [quickNote, setQuickNote] = useState('');
+  const [formError, setFormError] = useState('');
 
   useEffect(() => {
     if (order) {
@@ -29,6 +30,7 @@ export const EditOrderModal: React.FC<Props> = ({
       setCourierId(order.courierId);
       setDeliveryFee(order.deliveryFee);
       setQuickNote(order.quickNote || '');
+      setFormError('');
     }
   }, [order]);
 
@@ -38,7 +40,7 @@ export const EditOrderModal: React.FC<Props> = ({
     e.preventDefault();
     const numVal = parseFloat(String(orderValue));
     if (isNaN(numVal) || numVal <= 0) {
-      alert('برجاء إدخال قيمة صحيحة للأوردر');
+      setFormError('برجاء إدخال قيمة صحيحة للأوردر بالجنيه');
       return;
     }
 
@@ -50,6 +52,7 @@ export const EditOrderModal: React.FC<Props> = ({
       quickNote,
     });
 
+    setFormError('');
     onClose();
   };
 
@@ -81,6 +84,13 @@ export const EditOrderModal: React.FC<Props> = ({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {formError && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
+
           {/* Order Value */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">

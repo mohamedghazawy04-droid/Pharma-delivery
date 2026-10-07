@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, DollarSign, Bike, Check, Zap } from 'lucide-react';
+import { X, DollarSign, Bike, Check, Zap, AlertTriangle } from 'lucide-react';
 import { CourierProfile, PaymentMethod } from '../types';
 import { store } from '../services/store';
 
@@ -21,10 +21,12 @@ export const NewOrderModal: React.FC<Props> = ({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [customDeliveryFee, setCustomDeliveryFee] = useState<number>(globalDeliveryFee || 7);
   const [quickNote, setQuickNote] = useState('');
+  const [formError, setFormError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
+      setFormError('');
       if (couriers.length > 0 && !selectedCourierId) {
         setSelectedCourierId(couriers[0].id);
         setCustomDeliveryFee(couriers[0].deliveryFeePerOrder || globalDeliveryFee || 7);
@@ -39,6 +41,7 @@ export const NewOrderModal: React.FC<Props> = ({
 
   const handleCourierChange = (courierId: string) => {
     setSelectedCourierId(courierId);
+    setFormError('');
     const courier = couriers.find((c) => c.id === courierId);
     if (courier) {
       setCustomDeliveryFee(courier.deliveryFeePerOrder);
@@ -49,13 +52,13 @@ export const NewOrderModal: React.FC<Props> = ({
     e.preventDefault();
     const numVal = parseFloat(orderValue);
     if (isNaN(numVal) || numVal <= 0) {
-      alert('برجاء إدخال قيمة الأوردر بالجنيه');
+      setFormError('برجاء إدخال قيمة الأوردر بالجنيه');
       inputRef.current?.focus();
       return;
     }
 
     if (!selectedCourierId) {
-      alert('برجاء اختيار المندوب لإسناد الأوردر له');
+      setFormError('برجاء اختيار المندوب لإسناد الأوردر له');
       return;
     }
 
@@ -69,6 +72,7 @@ export const NewOrderModal: React.FC<Props> = ({
 
     setOrderValue('');
     setQuickNote('');
+    setFormError('');
     onClose();
   };
 
@@ -103,6 +107,13 @@ export const NewOrderModal: React.FC<Props> = ({
 
         {/* Fast Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {formError && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
+
           {/* Huge Order Value Input */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">

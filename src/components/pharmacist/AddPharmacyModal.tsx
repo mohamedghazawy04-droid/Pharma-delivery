@@ -13,13 +13,14 @@ export const AddPharmacyModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [deliveryFee, setDeliveryFee] = useState<number>(7);
+  const [formError, setFormError] = useState('');
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      alert('برجاء إدخال اسم الصيدلية أو الفرع');
+      setFormError('برجاء إدخال اسم الصيدلية أو الفرع');
       return;
     }
 
@@ -36,6 +37,7 @@ export const AddPharmacyModal: React.FC<Props> = ({ isOpen, onClose }) => {
     setPharmacistName('');
     setPhone('');
     setAddress('');
+    setFormError('');
     onClose();
   };
 
@@ -63,6 +65,12 @@ export const AddPharmacyModal: React.FC<Props> = ({ isOpen, onClose }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {formError && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl">
+              {formError}
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
               اسم الصيدلية أو الفرع الجديد *
@@ -71,7 +79,10 @@ export const AddPharmacyModal: React.FC<Props> = ({ isOpen, onClose }) => {
               type="text"
               required
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                setFormError('');
+              }}
               placeholder="مثال: صيدلية الأمل - فرع 2"
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-hidden"
             />
