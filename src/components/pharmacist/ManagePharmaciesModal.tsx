@@ -15,9 +15,11 @@ import {
   AlertTriangle,
   User,
   Loader2,
+  Edit3,
 } from 'lucide-react';
 import { Pharmacy, CourierProfile, Order } from '../../types';
 import { store } from '../../services/store';
+import { EditPharmacyModal } from './EditPharmacyModal';
 
 interface Props {
   isOpen: boolean;
@@ -40,6 +42,7 @@ export const ManagePharmaciesModal: React.FC<Props> = ({
 
   // Confirmation state for deleting a pharmacy (In-App dialog, no window.confirm!)
   const [pharmacyToDelete, setPharmacyToDelete] = useState<Pharmacy | null>(null);
+  const [pharmacyToEdit, setPharmacyToEdit] = useState<Pharmacy | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{
     type: 'success' | 'error';
@@ -405,6 +408,16 @@ export const ManagePharmaciesModal: React.FC<Props> = ({
                             </span>
                           )}
 
+                          {/* Edit Pharmacy Button */}
+                          <button
+                            onClick={() => setPharmacyToEdit(pharmacy)}
+                            title="تعديل اسم وبيانات الصيدلية"
+                            className="p-2 rounded-xl transition flex items-center justify-center gap-1 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200"
+                          >
+                            <Edit3 className="w-4 h-4 text-slate-500" />
+                            <span className="hidden sm:inline">تعديل</span>
+                          </button>
+
                           {/* Delete Pharmacy Button */}
                           <button
                             onClick={() => initiateDelete(pharmacy)}
@@ -547,6 +560,13 @@ export const ManagePharmaciesModal: React.FC<Props> = ({
           )}
         </div>
       </div>
+
+      {/* Edit Pharmacy Modal */}
+      <EditPharmacyModal
+        isOpen={pharmacyToEdit !== null}
+        onClose={() => setPharmacyToEdit(null)}
+        pharmacy={pharmacyToEdit}
+      />
     </div>
   );
 };

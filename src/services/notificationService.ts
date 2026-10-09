@@ -12,13 +12,26 @@ export interface DeliveryAlertItem {
   timestamp: string;
 }
 
+export interface CourierAlertItem {
+  id: string;
+  courierId: string;
+  courierName: string;
+  phone: string;
+  vehicleType: string;
+  pharmacyName: string;
+  timestamp: string;
+}
+
 type PermissionListener = (permission: NotificationPermission | 'unsupported') => void;
 type DeliveryAlertListener = (alert: DeliveryAlertItem) => void;
+type CourierAlertListener = (alert: CourierAlertItem) => void;
 
 class NotificationService {
   private permissionListeners: Set<PermissionListener> = new Set();
   private deliveryAlertListeners: Set<DeliveryAlertListener> = new Set();
+  private courierAlertListeners: Set<CourierAlertListener> = new Set();
   private notifiedOrderIds: Set<string> = new Set();
+  private notifiedCourierIds: Set<string> = new Set();
   private recentAlerts: DeliveryAlertItem[] = [];
 
   constructor() {
@@ -57,12 +70,67 @@ class NotificationService {
     return () => this.deliveryAlertListeners.delete(listener);
   }
 
+  public onCourierAlert(listener: CourierAlertListener): () => void {
+    this.courierAlertListeners.add(listener);
+    return () => this.courierAlertListeners.delete(listener);
+  }
+
   public getRecentAlerts(): DeliveryAlertItem[] {
     return [...this.recentAlerts];
   }
 
   public clearRecentAlerts() {
     this.recentAlerts = [];
+  }
+
+  /**
+   * Alert the pharmacist when a new courier registers on mobile
+   */
+  public notifyNewCourierRegistered(courier: CourierProfile, pharmacies: Pharmacy[]) {
+    if (this.notifiedCourierIds.has(courier.id)) return;
+    this.notifiedCourierIds.add(courier.id);
+
+    const targetPharma = pharmacies.find((p) => p.id === courier.pharmacyId);
+    const pharmacyName = targetPharma?.name || 'الصيدلية';
+
+    // 1. Play auditory chime
+    playDeliverySuccessSound();
+
+    // 2. Prepare Alert Item
+    const alertItem: CourierAlertItem = {
+      id: `courier-alert-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      courierId: courier.id,
+      courierName: courier.name,
+      phone: courier.phone,
+      vehicleType: courier.vehicleType,
+      pharmacyName,
+      timestamp: new Date().toLocaleTimeString('ar-EG', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    };
+
+    // 3. Emit in-app listeners
+    this.courierAlertListeners.forEach((listener) => listener(alertItem));
+
+    // 4. Trigger Web Notifications API if supported
+    if (this.isSupported() && Notification.permission === 'granted') {
+      try {
+        const title = `🛵 انضمام مندوب جديد: ${courier.name}`;
+        const body = `سجل الكابتن ${courier.name} (${courier.phone} - ${courier.vehicleType}) للعمل بصيدلية: ${pharmacyName}.`;
+        const notification = new Notification(title, {
+          body,
+          icon: '/favicon.ico',
+          tag: `courier-reg-${courier.id}`,
+        });
+        notification.onclick = () => {
+          window.focus();
+          notification.close();
+        };
+      } catch (err) {
+        console.warn('Courier Web Notification failed:', err);
+      }
+    }
   }
 
   /**

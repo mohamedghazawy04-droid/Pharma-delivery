@@ -2,31 +2,16 @@
   "pharmacies": [
     {
       "id": "pharma-main",
-      "name": "صيدلية النور والشفاء",
-      "pharmacistName": "د. صيدلي",
-      "phone": "01012345678",
-      "address": "شارع التحرير - الدقي، الجيزة",
+      "name": "صيدليه الديب",
+      "pharmacistName": "د.محمد",
+      "phone": "01063629587",
+      "address": "الحي ١١ الاتحاد التعاوني",
       "password": "pharmacist123",
       "globalDeliveryFee": 7,
       "coordinates": {
-        "lat": 30.0488,
-        "lng": 31.2112,
-        "address": "صيدلية النور والشفاء - شارع مصدق، الدقي، الجيزة"
-      },
-      "createdAt": "2026-10-06T00:00:00.000Z"
-    },
-    {
-      "id": "pharma-branch-2",
-      "name": "صيدلية الأمل والشفاء (فرع 2)",
-      "pharmacistName": "د. أحمد",
-      "phone": "01123456789",
-      "address": "شارع مصدق - المهندسين، الجيزة",
-      "password": "pharmacist123",
-      "globalDeliveryFee": 7,
-      "coordinates": {
-        "lat": 30.055,
-        "lng": 31.205,
-        "address": "شارع مصدق - المهندسين، الجيزة"
+        "lat": 30.05688,
+        "lng": 31.20572,
+        "address": "الحي ١١ الاتحاد التعاوني"
       },
       "createdAt": "2026-10-06T00:00:00.000Z"
     }
@@ -34,5 +19,5 @@
   "couriers": [],
   "orders": [],
   "shiftSummaries": [],
-  "lastUpdated": "2026-10-07T07:00:41.762Z"
+  "lastUpdated": "2026-10-09T12:16:00.000Z"
 }

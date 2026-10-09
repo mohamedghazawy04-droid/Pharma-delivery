@@ -57,6 +57,10 @@ export interface CourierProfile {
   shift: CourierShiftInfo;
   isStoppageAlertActive: boolean;
   stoppageAlertAcknowledged: boolean;
+  lastSeenTimestamp?: number; // timestamp in ms of last active heartbeat/GPS ping
+  isOfflineAlertActive?: boolean; // true if internet closed or disconnected for >= 5 minutes
+  offlineSeconds?: number; // seconds since last heartbeat
+  isInternetOnline?: boolean; // whether courier's device reports online
   createdAt: string;
 }
 

@@ -17,12 +17,27 @@ import {
   startRepeatingAlarm,
   stopRepeatingAlarm,
 } from '../utils/audio';
-import { db } from './firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from './firebase';
+import { doc, setDoc, deleteDoc, onSnapshot, collection } from 'firebase/firestore';
 import { notificationService } from './notificationService';
 
-const STORAGE_KEY = 'pharma_delivery_real_v3';
+const STORAGE_KEY = 'pharma_delivery_real_v4';
 const SYNC_CHANNEL_NAME = 'pharma_real_sync_channel';
+
+// Helper to merge arrays by unique ID so multi-client sync never overwrites or loses data
+function mergeById<T extends { id: string }>(existing: T[], incoming: T[]): T[] {
+  const map = new Map<string, T>();
+  (existing || []).forEach((item) => {
+    if (item && item.id) map.set(item.id, item);
+  });
+  (incoming || []).forEach((item) => {
+    if (item && item.id) {
+      const prev = map.get(item.id);
+      map.set(item.id, prev ? { ...prev, ...item } : item);
+    }
+  });
+  return Array.from(map.values());
+}
 
 interface AppState {
   role: UserRole;
@@ -36,33 +51,22 @@ interface AppState {
   authenticatedCourierId: string | null;
 }
 
-// Clean initial pharmacies without fake dummy couriers or fake orders
+// Clean initial pharmacies with user pharmacy صيدليه الديب as the SOLE real pharmacy
 const DEFAULT_INITIAL_PHARMACIES: Pharmacy[] = [
   {
     id: 'pharma-main',
-    name: 'صيدلية النور والشفاء',
-    pharmacistName: 'د. صيدلي',
-    phone: '01012345678',
-    address: 'شارع التحرير - الدقي، الجيزة',
-    password: 'pharmacist123', // As required by user
-    globalDeliveryFee: 7, // 7 EGP per order
-    coordinates: PHARMACY_BASE_LOCATION,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'pharma-branch-2',
-    name: 'صيدلية الأمل والشفاء (فرع 2)',
-    pharmacistName: 'د. أحمد',
-    phone: '01123456789',
-    address: 'شارع مصدق - المهندسين، الجيزة',
+    name: 'صيدليه الديب',
+    pharmacistName: 'د.محمد',
+    phone: '01063629587',
+    address: 'الحي ١١ الاتحاد التعاوني',
     password: 'pharmacist123',
     globalDeliveryFee: 7,
     coordinates: {
-      lat: 30.055,
-      lng: 31.205,
-      address: 'شارع مصدق - المهندسين، الجيزة',
+      lat: 30.05688,
+      lng: 31.20572,
+      address: 'الحي ١١ الاتحاد التعاوني',
     },
-    createdAt: new Date().toISOString(),
+    createdAt: '2026-10-06T00:00:00.000Z',
   },
 ];
 
@@ -72,19 +76,29 @@ function loadInitialState(): AppState {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed.pharmacies && Array.isArray(parsed.pharmacies) && parsed.pharmacies.length > 0) {
-        const currentPharmacies: Pharmacy[] = parsed.pharmacies;
-        const activeStillExists = currentPharmacies.some(
+        // Filter out any stale dummy/fake pharmacies
+        const cleanPharmacies: Pharmacy[] = parsed.pharmacies.filter(
+          (p: Pharmacy) =>
+            p &&
+            p.id !== 'pharma-branch-2' &&
+            p.name !== 'صيدلية النور والشفاء (فرع 2)'
+        );
+
+        const finalPharmacies =
+          cleanPharmacies.length > 0 ? cleanPharmacies : DEFAULT_INITIAL_PHARMACIES;
+
+        const activeStillExists = finalPharmacies.some(
           (p) => p.id === parsed.activePharmacyId
         );
         const finalActiveId = activeStillExists
           ? parsed.activePharmacyId
-          : currentPharmacies[0].id;
+          : finalPharmacies[0].id;
 
         return {
           role: parsed.role || 'pharmacist',
           activePharmacyId: finalActiveId,
           currentCourierId: parsed.currentCourierId || '',
-          pharmacies: currentPharmacies,
+          pharmacies: finalPharmacies,
           couriers: parsed.couriers || [], // Real data only
           orders: parsed.orders || [], // Real data only
           shiftSummaries: parsed.shiftSummaries || [],
@@ -97,7 +111,7 @@ function loadInitialState(): AppState {
     console.warn('Failed to parse state from localStorage:', e);
   }
 
-  // Pure clean state with both default pharmacies, NO fake orders and NO fake couriers
+  // Pure clean state with only real pharmacy صيدليه الديب, NO fake pharmacies, NO fake orders and NO fake couriers
   return {
     role: 'pharmacist',
     activePharmacyId: DEFAULT_INITIAL_PHARMACIES[0].id,
@@ -118,13 +132,183 @@ class Store {
   private tickerInterval: number | null = null;
   private cloudPollInterval: number | null = null;
   private lastCloudTimestamp = '';
+  private isInitialLoadDone = false;
+  private knownCourierIds: Set<string> = new Set();
 
   constructor() {
     this.state = loadInitialState();
+    (this.state.couriers || []).forEach((c) => {
+      if (c && c.id) this.knownCourierIds.add(c.id);
+    });
+
     this.initSyncChannel();
     this.startRealStoppageTicker();
     this.fetchCloudData();
     this.startCloudPolling();
+    this.initFirestoreSync();
+
+    // Mark initial load done after brief moment so live arrivals trigger notifications
+    setTimeout(() => {
+      this.isInitialLoadDone = true;
+    }, 2000);
+  }
+
+  // Handle incoming couriers from Firestore, API polling, or multi-tabs
+  private handleIncomingCouriers(incomingCouriers: CourierProfile[]) {
+    if (!Array.isArray(incomingCouriers) || incomingCouriers.length === 0) return;
+
+    const prevCouriers = this.state.couriers || [];
+    const existingIds = new Set(prevCouriers.map((c) => c.id));
+    const newCouriers = incomingCouriers.filter(
+      (c) => !existingIds.has(c.id) && !this.knownCourierIds.has(c.id)
+    );
+
+    // If initial sync completed and a new courier joined from mobile, alert the pharmacist!
+    if (this.isInitialLoadDone && newCouriers.length > 0) {
+      newCouriers.forEach((newC) => {
+        this.knownCourierIds.add(newC.id);
+        notificationService.notifyNewCourierRegistered(newC, this.state.pharmacies);
+      });
+    } else {
+      incomingCouriers.forEach((c) => {
+        if (c && c.id) this.knownCourierIds.add(c.id);
+      });
+    }
+
+    const merged = mergeById(prevCouriers, incomingCouriers);
+    const hasDifference =
+      merged.length !== prevCouriers.length ||
+      JSON.stringify(merged) !== JSON.stringify(prevCouriers);
+
+    if (hasDifference) {
+      this.state = {
+        ...this.state,
+        couriers: merged,
+      };
+
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+      } catch (e) {}
+
+      this.listeners.forEach((listener) => listener());
+    }
+  }
+
+  // Real-time synchronization via Cloud Firestore (synchronizes preview and web page globally)
+  private initFirestoreSync() {
+    if (typeof window === 'undefined' || !db) return;
+
+    // 1. Listen to individual couriers collection for instant multi-device registration sync
+    try {
+      const couriersColRef = collection(db, 'couriers');
+      onSnapshot(
+        couriersColRef,
+        (snapshot) => {
+          const incoming: CourierProfile[] = [];
+          snapshot.forEach((docSnap) => {
+            if (docSnap.exists()) {
+              incoming.push(docSnap.data() as CourierProfile);
+            }
+          });
+          if (incoming.length > 0) {
+            this.handleIncomingCouriers(incoming);
+          }
+        },
+        (error) => {
+          console.warn('Firestore couriers collection onSnapshot:', error);
+        }
+      );
+    } catch (err) {
+      console.warn('Failed to listen to couriers collection:', err);
+    }
+
+    // 2. Listen to system cloud state
+    try {
+      const stateDocRef = doc(db, 'system', 'cloud_state');
+      onSnapshot(
+        stateDocRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const cloudData = snapshot.data();
+            if (
+              cloudData &&
+              Array.isArray(cloudData.pharmacies) &&
+              cloudData.pharmacies.length > 0
+            ) {
+              const incomingPharmacies: Pharmacy[] = cloudData.pharmacies;
+              const activeStillExists = incomingPharmacies.some(
+                (p) => p.id === this.state.activePharmacyId
+              );
+
+              // Process couriers from cloudData
+              if (Array.isArray(cloudData.couriers)) {
+                this.handleIncomingCouriers(cloudData.couriers);
+              }
+
+              // Check for newly delivered orders to notify
+              if (Array.isArray(cloudData.orders)) {
+                const incomingOrders: Order[] = cloudData.orders;
+                incomingOrders.forEach((cloudOrd) => {
+                  if (cloudOrd.status === 'delivered') {
+                    const prev = this.state.orders.find((p) => p.id === cloudOrd.id);
+                    if (prev && prev.status !== 'delivered') {
+                      const courier = (cloudData.couriers || this.state.couriers).find(
+                        (c: any) => c.id === cloudOrd.courierId
+                      );
+                      const pharmacy = (incomingPharmacies || this.state.pharmacies).find(
+                        (p: any) => p.id === cloudOrd.pharmacyId
+                      );
+                      notificationService.notifyOrderDelivered({
+                        order: cloudOrd,
+                        courier,
+                        pharmacy,
+                      });
+                    }
+                  }
+                });
+              }
+
+              this.state = {
+                ...this.state,
+                pharmacies: incomingPharmacies,
+                couriers: Array.isArray(cloudData.couriers)
+                  ? mergeById(this.state.couriers, cloudData.couriers)
+                  : this.state.couriers,
+                orders: Array.isArray(cloudData.orders)
+                  ? cloudData.orders
+                  : this.state.orders,
+                shiftSummaries: Array.isArray(cloudData.shiftSummaries)
+                  ? cloudData.shiftSummaries
+                  : this.state.shiftSummaries,
+                activePharmacyId: activeStillExists
+                  ? this.state.activePharmacyId
+                  : incomingPharmacies[0]?.id || 'pharma-main',
+              };
+
+              try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+              } catch (e) {}
+
+              this.listeners.forEach((listener) => listener());
+            }
+          } else {
+            // Document not yet created: seed it with current state
+            setDoc(stateDocRef, {
+              pharmacies: this.state.pharmacies,
+              couriers: this.state.couriers,
+              orders: this.state.orders,
+              shiftSummaries: this.state.shiftSummaries,
+              lastUpdated: new Date().toISOString(),
+            }).catch((err) => console.warn('Firestore seeding error:', err));
+          }
+        },
+        (error) => {
+          console.warn('Firestore onSnapshot listener error:', error);
+        }
+      );
+    } catch (err) {
+      console.warn('Failed to initialize Firestore sync:', err);
+    }
   }
 
   private initSyncChannel() {
@@ -152,6 +336,11 @@ class Store {
               }
             });
 
+            // Check for new couriers via sync
+            if (event.data.state && Array.isArray(event.data.state.couriers)) {
+              this.handleIncomingCouriers(event.data.state.couriers);
+            }
+
             this.state = event.data.state;
             this.notify(false, false);
           } else if (event.data && event.data.type === 'ORDER_DELIVERED') {
@@ -160,6 +349,14 @@ class Store {
               courier: event.data.courier,
               pharmacy: event.data.pharmacy,
             });
+          } else if (event.data && event.data.type === 'COURIER_REGISTERED') {
+            if (event.data.courier) {
+              notificationService.notifyNewCourierRegistered(
+                event.data.courier,
+                event.data.pharmacies || this.state.pharmacies
+              );
+              this.handleIncomingCouriers([event.data.courier]);
+            }
           }
         };
       }
@@ -184,6 +381,11 @@ class Store {
             const activeStillExists = serverPharmacies.some(
               (p) => p.id === this.state.activePharmacyId
             );
+
+            // Ingest incoming couriers with real-time new courier alert
+            if (Array.isArray(cloudData.couriers)) {
+              this.handleIncomingCouriers(cloudData.couriers);
+            }
 
             // Detect newly delivered orders from cloud polling
             if (Array.isArray(cloudData.orders)) {
@@ -211,7 +413,9 @@ class Store {
             this.state = {
               ...this.state,
               pharmacies: serverPharmacies,
-              couriers: Array.isArray(cloudData.couriers) ? cloudData.couriers : this.state.couriers,
+              couriers: Array.isArray(cloudData.couriers)
+                ? mergeById(this.state.couriers, cloudData.couriers)
+                : this.state.couriers,
               orders: Array.isArray(cloudData.orders) ? cloudData.orders : this.state.orders,
               shiftSummaries: Array.isArray(cloudData.shiftSummaries)
                 ? cloudData.shiftSummaries
@@ -380,15 +584,30 @@ class Store {
     return newPharmacy;
   }
 
-  // Update Pharmacy
-  public updatePharmacy(pharmacyId: string, updates: Partial<Pharmacy>) {
+  // Update Pharmacy (تعديل بيانات واسم الصيدلية)
+  public updatePharmacy(pharmacyId: string, updates: Partial<Pharmacy>): { success: boolean } {
     this.state = {
       ...this.state,
       pharmacies: this.state.pharmacies.map((p) =>
         p.id === pharmacyId ? { ...p, ...updates } : p
       ),
     };
-    this.notify(true);
+    this.notify(true, true);
+
+    fetch('/api/pharmacy/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: pharmacyId, updates }),
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success && res.data) {
+          this.lastCloudTimestamp = res.data.lastUpdated || '';
+        }
+      })
+      .catch((err) => console.warn('Cloud pharmacy update sync error:', err));
+
+    return { success: true };
   }
 
   // Delete / Remove Pharmacy (إزالة الصيدلية نهائياً)
@@ -472,11 +691,30 @@ class Store {
         currentCourierId: courier.id,
         authenticatedCourierId: courier.id,
         activePharmacyId: courier.pharmacyId, // Switch to courier's pharmacy
+        couriers: this.state.couriers.map((c) =>
+          c.id === courier.id ? { ...c, isOnDuty: true } : c
+        ),
       };
       this.notify(true);
       return { success: true, courier };
     }
     return { success: false, error: 'رقم الهاتف أو كلمة المرور للمندوب غير صحيحة' };
+  }
+
+  // Asynchronous login that pulls freshest data from cloud if not found in local memory
+  public async loginCourierAsync(
+    phone: string,
+    password: string
+  ): Promise<{ success: boolean; courier?: CourierProfile; error?: string }> {
+    const initialCheck = this.loginCourier(phone, password);
+    if (initialCheck.success) return initialCheck;
+
+    // Refresh cloud data in case courier registered from another device
+    try {
+      await this.fetchCloudData();
+    } catch (e) {}
+
+    return this.loginCourier(phone, password);
   }
 
   // Logout method (العودة لواجهة تسجيل الدخول الرئيسية)
@@ -1079,7 +1317,7 @@ class Store {
   }
 
   // Register real Courier with Password and Pharmacy association
-  public registerCourier(data: {
+  public async registerCourierAsync(data: {
     pharmacyId: string;
     name: string;
     phone: string;
@@ -1088,18 +1326,19 @@ class Store {
     vehicleNumber: string;
     nationalId?: string;
     deliveryFeePerOrder?: number;
-  }): CourierProfile {
-    const pharmacy = this.state.pharmacies.find((p) => p.id === data.pharmacyId) || this.getActivePharmacy();
+  }): Promise<CourierProfile> {
+    const pharmacy =
+      this.state.pharmacies.find((p) => p.id === data.pharmacyId) || this.getActivePharmacy();
 
     const newCourier: CourierProfile = {
       id: `courier-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      pharmacyId: data.pharmacyId,
-      name: data.name,
-      phone: data.phone,
-      password: data.password,
+      pharmacyId: pharmacy.id,
+      name: data.name.trim(),
+      phone: data.phone.trim(),
+      password: data.password.trim(),
       vehicleType: data.vehicleType,
-      vehicleNumber: data.vehicleNumber,
-      nationalId: data.nationalId,
+      vehicleNumber: data.vehicleNumber.trim() || 'بدون لوحة',
+      nationalId: data.nationalId?.trim(),
       deliveryFeePerOrder: data.deliveryFeePerOrder || pharmacy.globalDeliveryFee || 7,
       currentLocation: {
         lat: pharmacy.coordinates.lat + (Math.random() - 0.5) * 0.005,
@@ -1125,15 +1364,223 @@ class Store {
       createdAt: new Date().toISOString(),
     };
 
+    // 1. Mark as known locally so registering device doesn't trigger duplicate alert for itself
+    this.knownCourierIds.add(newCourier.id);
+
+    // 2. Immediate local state update
     this.state = {
       ...this.state,
-      couriers: [...this.state.couriers, newCourier],
+      couriers: mergeById(this.state.couriers, [newCourier]),
       currentCourierId: newCourier.id,
       role: 'courier',
       authenticatedCourierId: newCourier.id,
+      activePharmacyId: pharmacy.id,
     };
     this.notify(true);
+
+    // 3. Post to Server API directly
+    try {
+      const res = await fetch('/api/courier/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCourier),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.couriers) {
+          this.state.couriers = mergeById(this.state.couriers, json.couriers);
+        }
+      }
+    } catch (err) {
+      console.warn('API courier registration fallback:', err);
+    }
+
+    // 4. Save directly into Firestore collection & system document
+    try {
+      if (typeof window !== 'undefined' && db) {
+        await setDoc(doc(db, 'couriers', newCourier.id), newCourier);
+        await setDoc(
+          doc(db, 'system', 'cloud_state'),
+          {
+            couriers: this.state.couriers,
+            lastUpdated: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+      }
+    } catch (e) {
+      console.warn('Firestore courier write fallback:', e);
+    }
+
+    // 5. Broadcast to other open tabs on this browser
+    if (this.syncChannel) {
+      this.syncChannel.postMessage({
+        type: 'COURIER_REGISTERED',
+        courier: newCourier,
+        pharmacies: this.state.pharmacies,
+      });
+    }
+
     return newCourier;
+  }
+
+  // Synchronous wrapper for backward compatibility
+  public registerCourier(data: {
+    pharmacyId: string;
+    name: string;
+    phone: string;
+    password: string;
+    vehicleType: CourierProfile['vehicleType'];
+    vehicleNumber: string;
+    nationalId?: string;
+    deliveryFeePerOrder?: number;
+  }): CourierProfile {
+    const pharmacy =
+      this.state.pharmacies.find((p) => p.id === data.pharmacyId) || this.getActivePharmacy();
+
+    const newCourier: CourierProfile = {
+      id: `courier-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      pharmacyId: pharmacy.id,
+      name: data.name.trim(),
+      phone: data.phone.trim(),
+      password: data.password.trim(),
+      vehicleType: data.vehicleType,
+      vehicleNumber: data.vehicleNumber.trim() || 'بدون لوحة',
+      nationalId: data.nationalId?.trim(),
+      deliveryFeePerOrder: data.deliveryFeePerOrder || pharmacy.globalDeliveryFee || 7,
+      currentLocation: {
+        lat: pharmacy.coordinates.lat + (Math.random() - 0.5) * 0.005,
+        lng: pharmacy.coordinates.lng + (Math.random() - 0.5) * 0.005,
+        address: `محيط ${pharmacy.name}`,
+        speedKmH: 0,
+        lastMovedTimestamp: Date.now(),
+        isStationary: false,
+        stationarySeconds: 0,
+      },
+      isOnDuty: true,
+      shift: {
+        startTime: new Date().toISOString(),
+        isEnded: false,
+        totalOrdersDelivered: 0,
+        totalDeliveryEarnings: 0,
+        totalCollectedCash: 0,
+        totalCollectedVisa: 0,
+        totalCollectedInstapay: 0,
+      },
+      isStoppageAlertActive: false,
+      stoppageAlertAcknowledged: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.knownCourierIds.add(newCourier.id);
+    this.state = {
+      ...this.state,
+      couriers: mergeById(this.state.couriers, [newCourier]),
+      currentCourierId: newCourier.id,
+      role: 'courier',
+      authenticatedCourierId: newCourier.id,
+      activePharmacyId: pharmacy.id,
+    };
+    this.notify(true);
+
+    // Background push to API and Firestore
+    this.registerCourierAsync(data).catch(() => {});
+
+    return newCourier;
+  }
+
+  // Delete courier permanently
+  public async deleteCourier(courierId: string): Promise<boolean> {
+    const courierToDelete = this.state.couriers.find((c) => c.id === courierId);
+    if (!courierToDelete) return false;
+
+    // Remove from in-memory state
+    this.knownCourierIds.delete(courierId);
+    this.state = {
+      ...this.state,
+      couriers: this.state.couriers.filter((c) => c.id !== courierId),
+      orders: this.state.orders.filter((o) => o.courierId !== courierId),
+      currentCourierId:
+        this.state.currentCourierId === courierId ? '' : this.state.currentCourierId,
+    };
+    this.notify(true);
+
+    // Call server delete API
+    try {
+      await fetch('/api/courier/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courierId }),
+      });
+    } catch (e) {
+      console.warn('Server delete courier fallback:', e);
+    }
+
+    // Delete from Firestore
+    try {
+      if (typeof window !== 'undefined' && db) {
+        await deleteDoc(doc(db, 'couriers', courierId));
+      }
+    } catch (e) {
+      console.warn('Firestore deleteDoc fallback:', e);
+    }
+
+    return true;
+  }
+
+  // Reassign courier to another pharmacy branch
+  public async reassignCourierPharmacy(
+    courierId: string,
+    newPharmacyId: string
+  ): Promise<boolean> {
+    const courier = this.state.couriers.find((c) => c.id === courierId);
+    if (!courier) return false;
+
+    const targetPharma =
+      this.state.pharmacies.find((p) => p.id === newPharmacyId) || this.getActivePharmacy();
+
+    const updatedCourier: CourierProfile = {
+      ...courier,
+      pharmacyId: targetPharma.id,
+      deliveryFeePerOrder: courier.deliveryFeePerOrder || targetPharma.globalDeliveryFee || 7,
+      currentLocation: {
+        ...courier.currentLocation,
+        address: `محيط ${targetPharma.name}`,
+        lat: targetPharma.coordinates.lat + (Math.random() - 0.5) * 0.005,
+        lng: targetPharma.coordinates.lng + (Math.random() - 0.5) * 0.005,
+      },
+    };
+
+    this.state = {
+      ...this.state,
+      couriers: this.state.couriers.map((c) => (c.id === courierId ? updatedCourier : c)),
+    };
+    this.notify(true);
+
+    // Call server API
+    try {
+      await fetch('/api/courier/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          courierId,
+          updates: {
+            pharmacyId: targetPharma.id,
+            deliveryFeePerOrder: updatedCourier.deliveryFeePerOrder,
+            currentLocation: updatedCourier.currentLocation,
+          },
+        }),
+      });
+    } catch (e) {}
+
+    // Update in Firestore
+    try {
+      if (typeof window !== 'undefined' && db) {
+        await setDoc(doc(db, 'couriers', courierId), updatedCourier, { merge: true });
+      }
+    } catch (e) {}
+
+    return true;
   }
 }
 

@@ -30,31 +30,16 @@ const DEFAULT_INITIAL_DATA: CloudData = {
   pharmacies: [
     {
       id: 'pharma-main',
-      name: 'صيدلية النور والشفاء',
-      pharmacistName: 'د. صيدلي',
-      phone: '01012345678',
-      address: 'شارع التحرير - الدقي، الجيزة',
+      name: 'صيدليه الديب',
+      pharmacistName: 'د.محمد',
+      phone: '01063629587',
+      address: 'الحي ١١ الاتحاد التعاوني',
       password: 'pharmacist123',
       globalDeliveryFee: 7,
       coordinates: {
-        lat: 30.0488,
-        lng: 31.2112,
-        address: 'صيدلية النور والشفاء - شارع مصدق، الدقي، الجيزة',
-      },
-      createdAt: '2026-10-06T00:00:00.000Z',
-    },
-    {
-      id: 'pharma-branch-2',
-      name: 'صيدلية الأمل والشفاء (فرع 2)',
-      pharmacistName: 'د. أحمد',
-      phone: '01123456789',
-      address: 'شارع مصدق - المهندسين، الجيزة',
-      password: 'pharmacist123',
-      globalDeliveryFee: 7,
-      coordinates: {
-        lat: 30.055,
-        lng: 31.205,
-        address: 'شارع مصدق - المهندسين، الجيزة',
+        lat: 30.05688,
+        lng: 31.20572,
+        address: 'الحي ١١ الاتحاد التعاوني',
       },
       createdAt: '2026-10-06T00:00:00.000Z',
     },
@@ -71,6 +56,13 @@ function readCloudData(): CloudData {
       const raw = fs.readFileSync(DATA_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.pharmacies) && parsed.pharmacies.length > 0) {
+        // Strip out any fake/unwanted placeholder pharmacies
+        parsed.pharmacies = parsed.pharmacies.filter(
+          (p: any) => p.name !== 'صيدلية النور والشفاء (فرع 2)' && p.id !== 'pharma-branch-2'
+        );
+        if (parsed.pharmacies.length === 0) {
+          parsed.pharmacies = DEFAULT_INITIAL_DATA.pharmacies;
+        }
         return parsed;
       }
     }
@@ -97,6 +89,20 @@ function saveCloudData(data: CloudData) {
   }
 }
 
+function mergeById<T extends { id: string }>(existing: T[], incoming: T[]): T[] {
+  const map = new Map<string, T>();
+  (existing || []).forEach((item) => {
+    if (item && item.id) map.set(item.id, item);
+  });
+  (incoming || []).forEach((item) => {
+    if (item && item.id) {
+      const prev = map.get(item.id);
+      map.set(item.id, prev ? { ...prev, ...item } : item);
+    }
+  });
+  return Array.from(map.values());
+}
+
 // -------------------------------------------------------------
 // API Endpoints for Central Cloud Persistence
 // -------------------------------------------------------------
@@ -107,16 +113,29 @@ app.get('/api/data', (_req, res) => {
   res.json({ success: true, data });
 });
 
-// 2. Full Sync from client
+// 2. Full Sync from client (Merges by ID so clients don't overwrite each other)
 app.post('/api/sync', (req, res) => {
   const { pharmacies, couriers, orders, shiftSummaries } = req.body;
   const current = readCloudData();
 
+  const mergedPharmacies = Array.isArray(pharmacies)
+    ? mergeById(current.pharmacies, pharmacies)
+    : current.pharmacies;
+  const mergedCouriers = Array.isArray(couriers)
+    ? mergeById(current.couriers, couriers)
+    : current.couriers;
+  const mergedOrders = Array.isArray(orders)
+    ? mergeById(current.orders, orders)
+    : current.orders;
+  const mergedShifts = Array.isArray(shiftSummaries)
+    ? mergeById(current.shiftSummaries, shiftSummaries)
+    : current.shiftSummaries;
+
   const updated: CloudData = {
-    pharmacies: Array.isArray(pharmacies) ? pharmacies : current.pharmacies,
-    couriers: Array.isArray(couriers) ? couriers : current.couriers,
-    orders: Array.isArray(orders) ? orders : current.orders,
-    shiftSummaries: Array.isArray(shiftSummaries) ? shiftSummaries : current.shiftSummaries,
+    pharmacies: mergedPharmacies,
+    couriers: mergedCouriers,
+    orders: mergedOrders,
+    shiftSummaries: mergedShifts,
     lastUpdated: new Date().toISOString(),
   };
 
@@ -124,7 +143,94 @@ app.post('/api/sync', (req, res) => {
   res.json({ success: true, data: updated });
 });
 
-// 3. Add Pharmacy
+// 3. Register Courier Directly
+app.post('/api/courier/register', (req, res) => {
+  const courier = req.body;
+  if (!courier || !courier.name || !courier.phone) {
+    return res.status(400).json({ success: false, error: 'بيانات المندوب غير مكتملة' });
+  }
+
+  const current = readCloudData();
+  const phoneNormalized = courier.phone.trim();
+  const existingIdx = current.couriers.findIndex(
+    (c) => (c.phone && c.phone.trim() === phoneNormalized) || c.id === courier.id
+  );
+
+  let updatedCourier = courier;
+  if (existingIdx >= 0) {
+    current.couriers[existingIdx] = {
+      ...current.couriers[existingIdx],
+      ...courier,
+      updatedAt: new Date().toISOString(),
+    };
+    updatedCourier = current.couriers[existingIdx];
+  } else {
+    current.couriers.push({
+      ...courier,
+      createdAt: courier.createdAt || new Date().toISOString(),
+    });
+  }
+
+  saveCloudData(current);
+  console.log(`[Server] Courier registered/synced: ${courier.name} (${courier.phone}) for pharmacy: ${courier.pharmacyId}`);
+  res.json({ success: true, courier: updatedCourier, couriers: current.couriers });
+});
+
+// 3.1 Update Courier
+app.post('/api/courier/update', (req, res) => {
+  const { courierId, updates } = req.body;
+  if (!courierId || !updates) {
+    return res.status(400).json({ success: false, error: 'معرف المندوب والتحديثات مطلوبة' });
+  }
+
+  const current = readCloudData();
+  current.couriers = current.couriers.map((c) =>
+    c.id === courierId ? { ...c, ...updates, updatedAt: new Date().toISOString() } : c
+  );
+  saveCloudData(current);
+  res.json({ success: true, couriers: current.couriers });
+});
+
+// 3.2 Delete Courier
+app.post('/api/courier/delete', (req, res) => {
+  const { courierId } = req.body;
+  if (!courierId) {
+    return res.status(400).json({ success: false, error: 'معرف المندوب مطلوب' });
+  }
+
+  const current = readCloudData();
+  current.couriers = current.couriers.filter((c) => c.id !== courierId);
+  saveCloudData(current);
+  console.log(`[Server] Courier removed: ${courierId}`);
+  res.json({ success: true, couriers: current.couriers });
+});
+
+// 3.3 Real-time Courier GPS Location update & Heartbeat
+app.post('/api/courier/location', (req, res) => {
+  const { courierId, location, lastSeenTimestamp, isInternetOnline } = req.body;
+  if (!courierId || !location) {
+    return res.status(400).json({ success: false, error: 'معرف المندوب والموقع مطلوبان' });
+  }
+
+  const current = readCloudData();
+  const idx = current.couriers.findIndex((c) => c.id === courierId);
+  if (idx >= 0) {
+    current.couriers[idx].currentLocation = {
+      ...current.couriers[idx].currentLocation,
+      ...location,
+      lastGpsUpdate: new Date().toISOString(),
+      isGpsLive: true,
+    };
+    current.couriers[idx].lastSeenTimestamp = lastSeenTimestamp || Date.now();
+    current.couriers[idx].isInternetOnline = isInternetOnline !== undefined ? isInternetOnline : true;
+    current.couriers[idx].isOfflineAlertActive = false;
+    current.couriers[idx].offlineSeconds = 0;
+    saveCloudData(current);
+  }
+  res.json({ success: true });
+});
+
+// 4. Add Pharmacy
 app.post('/api/pharmacy/add', (req, res) => {
   const pharmacy = req.body;
   if (!pharmacy || !pharmacy.name) {
@@ -142,7 +248,22 @@ app.post('/api/pharmacy/add', (req, res) => {
   res.json({ success: true, data: current });
 });
 
-// 4. Delete Pharmacy
+// 4. Update Pharmacy
+app.post('/api/pharmacy/update', (req, res) => {
+  const { id, updates } = req.body;
+  if (!id || !updates) {
+    return res.status(400).json({ success: false, error: 'معرف الصيدلية والتحديثات مطلوبة' });
+  }
+
+  const current = readCloudData();
+  current.pharmacies = current.pharmacies.map((p) =>
+    p.id === id ? { ...p, ...updates } : p
+  );
+  saveCloudData(current);
+  res.json({ success: true, data: current });
+});
+
+// 5. Delete Pharmacy
 app.post('/api/pharmacy/delete', (req, res) => {
   const { pharmacyId } = req.body;
   if (!pharmacyId) {

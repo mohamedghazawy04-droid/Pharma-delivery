@@ -29,6 +29,8 @@ import {
   PackageCheck,
   Volume2,
   FileText,
+  Phone,
+  Trash2,
 } from 'lucide-react';
 import {
   CourierProfile,
@@ -42,6 +44,7 @@ import { notificationService, DeliveryAlertItem } from '../../services/notificat
 import { LiveMap } from '../LiveMap';
 import { AddPharmacyModal } from './AddPharmacyModal';
 import { ManagePharmaciesModal } from './ManagePharmaciesModal';
+import { EditPharmacyModal } from './EditPharmacyModal';
 import { ShiftPdfModal } from './ShiftPdfModal';
 import { formatDurationSeconds } from '../../utils/geo';
 
@@ -78,8 +81,12 @@ export const PharmacistDashboard: React.FC<Props> = ({
   const [isEditingFeeOpen, setIsEditingFeeOpen] = useState(false);
   const [isAddPharmacyOpen, setIsAddPharmacyOpen] = useState(false);
   const [isManagePharmaciesOpen, setIsManagePharmaciesOpen] = useState(false);
+  const [isEditActivePharmacyOpen, setIsEditActivePharmacyOpen] = useState(false);
   const [isShiftPdfModalOpen, setIsShiftPdfModalOpen] = useState(false);
   const [pdfModalSummary, setPdfModalSummary] = useState<ShiftSummaryArchive | null>(null);
+  const [courierScope, setCourierScope] = useState<'branch' | 'all'>('branch');
+  const [courierToDelete, setCourierToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeletingCourier, setIsDeletingCourier] = useState(false);
 
   // Fast inline order entry states (قيمة فقط لسرعة العمل)
   const [fastOrderValue, setFastOrderValue] = useState('');
@@ -119,6 +126,24 @@ export const PharmacistDashboard: React.FC<Props> = ({
 
   // Filter couriers and orders belonging to THIS pharmacy
   const pharmacyCouriers = couriers.filter((c) => c.pharmacyId === pharmacy.id);
+  const otherBranchCouriers = couriers.filter((c) => c.pharmacyId !== pharmacy.id);
+  const displayedCouriers = courierScope === 'all' ? couriers : pharmacyCouriers;
+
+  const handleDeleteCourierConfirm = async () => {
+    if (!courierToDelete) return;
+    setIsDeletingCourier(true);
+    try {
+      await store.deleteCourier(courierToDelete.id);
+      setCourierToDelete(null);
+    } finally {
+      setIsDeletingCourier(false);
+    }
+  };
+
+  const handleReassignCourier = async (courierId: string, targetPharmacyId: string) => {
+    await store.reassignCourierPharmacy(courierId, targetPharmacyId);
+  };
+
   const pharmacyOrders = orders.filter((o) => o.pharmacyId === pharmacy.id);
   const pharmacyShiftSummaries = shiftSummaries.filter((s) => s.pharmacyId === pharmacy.id);
 
@@ -190,6 +215,14 @@ export const PharmacistDashboard: React.FC<Props> = ({
               <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
                 {pharmacy.name}
               </h1>
+              <button
+                onClick={() => setIsEditActivePharmacyOpen(true)}
+                title="تعديل اسم وبيانات الصيدلية الحالية"
+                className="px-2 py-1 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 rounded-xl text-xs font-bold transition border border-slate-200 flex items-center gap-1"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>تعديل الاسم والبيانات</span>
+              </button>
               <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1 rounded-xl text-xs font-bold">
                 <Building2 className="w-3.5 h-3.5 text-emerald-700" />
                 <span>{pharmacies.length} صيدليات مسجلة</span>
@@ -689,29 +722,139 @@ export const PharmacistDashboard: React.FC<Props> = ({
       {/* Tab 1: Couriers */}
       {activeTab === 'couriers' && (
         <div className="space-y-4">
-          {pharmacyCouriers.length === 0 ? (
+          {/* Header Bar of Couriers Tab */}
+          <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-extrabold text-slate-900">
+                  مناديب التوصيل المسجلين
+                </h2>
+                <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  {displayedCouriers.length} مندوب
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                متابعة فورية للمناديب، التسجيل المباشر عبر الموبايل، والربط التلقائي بالصيدلية
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              {/* Scope Pills */}
+              {couriers.length > 0 && (
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold shrink-0">
+                  <button
+                    onClick={() => setCourierScope('branch')}
+                    className={`px-3 py-1.5 rounded-lg transition ${
+                      courierScope === 'branch'
+                        ? 'bg-white text-emerald-800 shadow-xs font-black'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    فرع {pharmacy.name} ({pharmacyCouriers.length})
+                  </button>
+                  <button
+                    onClick={() => setCourierScope('all')}
+                    className={`px-3 py-1.5 rounded-lg transition ${
+                      courierScope === 'all'
+                        ? 'bg-white text-indigo-800 shadow-xs font-black'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    كل المناديب ({couriers.length})
+                  </button>
+                </div>
+              )}
+
+              <button
+                onClick={onOpenAuthModal}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ تسجيل مندوب</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Alert if current branch has 0 couriers but other branches have couriers */}
+          {courierScope === 'branch' && pharmacyCouriers.length === 0 && otherBranchCouriers.length > 0 && (
+            <div className="bg-amber-50/90 border border-amber-200 rounded-3xl p-5 text-amber-900 space-y-3 animate-in fade-in">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2.5 bg-amber-100 text-amber-700 rounded-2xl shrink-0">
+                    <Bike className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-sm text-amber-950">
+                      يوجد {otherBranchCouriers.length} مندوب مسجلين في فروع أخرى للنظام
+                    </h4>
+                    <p className="text-xs text-amber-800">
+                      قام المناديب بالتسجيل عبر الموبايل. يمكنك نقلهم فوراً لفرع <strong>{pharmacy.name}</strong> بضغطة زر:
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setCourierScope('all')}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shrink-0 transition"
+                >
+                  استعراض كل المناديب
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 pt-1">
+                {otherBranchCouriers.map((c) => {
+                  const targetPh = pharmacies.find((p) => p.id === c.pharmacyId);
+                  return (
+                    <div
+                      key={c.id}
+                      className="bg-white p-3 rounded-2xl border border-amber-200 shadow-2xs flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <strong className="block text-xs text-slate-900 font-extrabold truncate">
+                          {c.name}
+                        </strong>
+                        <span className="text-[11px] text-slate-500 font-mono block">{c.phone}</span>
+                        <div className="text-[10px] text-amber-800 truncate">
+                          فرع: {targetPh?.name || 'غير محدد'}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleReassignCourier(c.id, pharmacy.id)}
+                        className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold shrink-0 transition"
+                      >
+                        نقل لهذا الفرع
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {displayedCouriers.length === 0 ? (
             <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-xs space-y-3">
               <Bike className="w-12 h-12 text-slate-300 mx-auto" />
               <h3 className="text-base font-extrabold text-slate-800">
-                لا يوجد مناديب مسجلين في {pharmacy.name} حتى الآن
+                لا يوجد مناديب مسجلين حتى الآن
               </h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                النظام يعمل ببيانات حقيقية تماماً بدون بيانات وهمية. اضغط على الزر أدناه لتسجيل أول مندوب توصيل لهذه الصيدلية.
+                عندما يقوم أي مندوب بإنشاء حساب وتسجيل الدخول عبر الموبايل، سيظهر هنا فوراً مع صوت تنبيهي وإشعار مباشر.
               </p>
               <button
                 onClick={onOpenAuthModal}
                 className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition inline-flex items-center gap-1.5"
               >
                 <Plus className="w-4 h-4" />
-                <span>+ تسجيل مندوب جديد لهذه الصيدلية</span>
+                <span>+ تسجيل مندوب جديد</span>
               </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pharmacyCouriers.map((courier) => {
+              {displayedCouriers.map((courier) => {
                 const courierOrders = activeOrders.filter((o) => o.courierId === courier.id);
                 const isAlerting = courier.isStoppageAlertActive;
                 const isStationary = courier.currentLocation.isStationary;
+                const courierPharma = pharmacies.find((p) => p.id === courier.pharmacyId);
+                const isOtherBranch = courier.pharmacyId !== pharmacy.id;
 
                 return (
                   <div
@@ -724,9 +867,9 @@ export const PharmacistDashboard: React.FC<Props> = ({
                   >
                     {/* Top Bar of Card */}
                     <div className="flex items-start justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
                         <div
-                          className={`w-11 h-11 rounded-2xl flex items-center justify-center text-lg ${
+                          className={`w-11 h-11 rounded-2xl flex items-center justify-center text-lg shrink-0 ${
                             isAlerting
                               ? 'bg-red-100 text-red-600 animate-bounce'
                               : 'bg-indigo-50 text-indigo-700'
@@ -734,26 +877,61 @@ export const PharmacistDashboard: React.FC<Props> = ({
                         >
                           {courier.vehicleType === 'دراجة' ? '🚲' : '🏍️'}
                         </div>
-                        <div>
-                          <h3 className="font-extrabold text-sm text-slate-900">
+                        <div className="min-w-0">
+                          <h3 className="font-extrabold text-sm text-slate-900 truncate">
                             {courier.name}
                           </h3>
-                          <p className="text-[11px] text-slate-500">
+                          <p className="text-[11px] text-slate-500 truncate">
                             {courier.vehicleType} ({courier.vehicleNumber}) · {courier.phone}
                           </p>
                         </div>
                       </div>
 
-                      <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                          courier.isOnDuty && !courier.shift.isEnded
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {courier.isOnDuty && !courier.shift.isEnded ? 'في الشيفت' : 'خارج الشيفت'}
-                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                            courier.isOnDuty && !courier.shift.isEnded
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {courier.isOnDuty && !courier.shift.isEnded ? 'في الشيفت' : 'خارج الشيفت'}
+                        </span>
+
+                        {/* Direct Call Button */}
+                        <a
+                          href={`tel:${courier.phone}`}
+                          className="p-1.5 text-slate-400 hover:text-emerald-600 rounded-lg transition"
+                          title="اتصال هاتفي بالمندوب"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                        </a>
+
+                        {/* Delete Courier Button */}
+                        <button
+                          onClick={() => setCourierToDelete({ id: courier.id, name: courier.name })}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition"
+                          title="حذف المندوب"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Pharmacy Branch Indicator & Switcher */}
+                    {isOtherBranch && (
+                      <div className="mb-3 p-2 bg-indigo-50/70 border border-indigo-200 rounded-xl text-xs text-indigo-900 flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold truncate">
+                          مسجل في: {courierPharma?.name || 'فرع آخر'}
+                        </span>
+                        <button
+                          onClick={() => handleReassignCourier(courier.id, pharmacy.id)}
+                          className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-extrabold whitespace-nowrap transition"
+                        >
+                          نقل لـ {pharmacy.name}
+                        </button>
+                      </div>
+                    )}
 
                     {/* Location & Real Inactivity status */}
                     <div className="bg-slate-50 rounded-2xl p-3 mb-3 border border-slate-200 space-y-1.5 text-xs">
@@ -1296,6 +1474,13 @@ export const PharmacistDashboard: React.FC<Props> = ({
         orders={orders}
       />
 
+      {/* Edit Active Pharmacy Modal */}
+      <EditPharmacyModal
+        isOpen={isEditActivePharmacyOpen}
+        onClose={() => setIsEditActivePharmacyOpen(false)}
+        pharmacy={pharmacy}
+      />
+
       {/* Export Shift Summary PDF Modal */}
       <ShiftPdfModal
         isOpen={isShiftPdfModalOpen}
@@ -1304,6 +1489,42 @@ export const PharmacistDashboard: React.FC<Props> = ({
         pharmacy={pharmacy}
         allPharmacySummaries={pharmacyShiftSummaries}
       />
+
+      {/* Delete Courier Confirmation Modal */}
+      {courierToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-slate-900">حذف المندوب نهائياً</h3>
+                <p className="text-xs text-slate-500">حذف حساب المندوب من قاعدة البيانات السحابية</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-100 leading-relaxed">
+              هل أنت متأكد من حذف حساب الكابتن <strong>{courierToDelete.name}</strong>؟ سيتم إلغاء تسجيله وإزالته من منظومة الصيدلية.
+            </p>
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                onClick={() => setCourierToDelete(null)}
+                disabled={isDeletingCourier}
+                className="flex-1 py-2.5 px-3 border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 transition"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleDeleteCourierConfirm}
+                disabled={isDeletingCourier}
+                className="flex-1 py-2.5 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+              >
+                {isDeletingCourier ? 'جاري الحذف...' : 'تأكيد الحذف'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

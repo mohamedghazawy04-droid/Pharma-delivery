@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   UserCheck,
   Bike,
@@ -8,6 +8,8 @@ import {
   Check,
   ShieldCheck,
   UserPlus,
+  Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 import { CourierProfile, Pharmacy } from '../types';
 import { store } from '../services/store';
@@ -22,6 +24,8 @@ export const LoginScreen: React.FC<Props> = ({
   activePharmacyId,
 }) => {
   const [authMode, setAuthMode] = useState<'pharmacist' | 'courier' | 'register_courier'>('pharmacist');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [regSuccessMessage, setRegSuccessMessage] = useState('');
 
   // Pharmacist Login
   const [selectedPharmacyId, setSelectedPharmacyId] = useState(activePharmacyId);
@@ -42,6 +46,15 @@ export const LoginScreen: React.FC<Props> = ({
   const [newCourierPlate, setNewCourierPlate] = useState('');
   const [newCourierPharmacyId, setNewCourierPharmacyId] = useState(activePharmacyId);
 
+  useEffect(() => {
+    if (!newCourierPharmacyId && pharmacies.length > 0) {
+      setNewCourierPharmacyId(activePharmacyId || pharmacies[0].id);
+    }
+    if (!selectedPharmacyId && pharmacies.length > 0) {
+      setSelectedPharmacyId(activePharmacyId || pharmacies[0].id);
+    }
+  }, [pharmacies, activePharmacyId]);
+
   const handlePharmacistLogin = (e: React.FormEvent) => {
     e.preventDefault();
     store.setActivePharmacy(selectedPharmacyId);
@@ -54,34 +67,55 @@ export const LoginScreen: React.FC<Props> = ({
     }
   };
 
-  const handleCourierLogin = (e: React.FormEvent) => {
+  const handleCourierLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = store.loginCourier(courierPhone, courierPassword);
-    if (!res.success) {
-      setCourierError(res.error || 'رقم الهاتف أو كلمة المرور غير صحيحة');
-    } else {
-      setCourierPhone('');
-      setCourierPassword('');
-      setCourierError('');
+    setIsSubmitting(true);
+    setCourierError('');
+    try {
+      const res = await store.loginCourierAsync(courierPhone, courierPassword);
+      if (!res.success) {
+        setCourierError(res.error || 'رقم الهاتف أو كلمة المرور غير صحيحة');
+      } else {
+        setCourierPhone('');
+        setCourierPassword('');
+        setCourierError('');
+      }
+    } catch (err: any) {
+      setCourierError('حدث خطأ أثناء محاولة تسجيل الدخول');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleRegisterCourier = (e: React.FormEvent) => {
+  const handleRegisterCourier = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCourierName || !newCourierPhone || !newCourierPassword) {
-      setCourierError('برجاء استكمال كافة البيانات الإلزامية للمندوب');
+    if (!newCourierName.trim() || !newCourierPhone.trim() || !newCourierPassword.trim()) {
+      setCourierError('برجاء استكمال كافة البيانات الإلزامية للمندوب (الاسم، الهاتف، وكلمة المرور)');
       return;
     }
 
-    store.registerCourier({
-      pharmacyId: newCourierPharmacyId || activePharmacyId,
-      name: newCourierName,
-      phone: newCourierPhone,
-      password: newCourierPassword,
-      vehicleType: newCourierVehicle,
-      vehicleNumber: newCourierPlate || 'بدون لوحة',
-      nationalId: newCourierNationalId,
-    });
+    setIsSubmitting(true);
+    setCourierError('');
+    setRegSuccessMessage('');
+
+    try {
+      const chosenPharmaId = newCourierPharmacyId || activePharmacyId || pharmacies[0]?.id || 'pharma-main';
+      const registered = await store.registerCourierAsync({
+        pharmacyId: chosenPharmaId,
+        name: newCourierName.trim(),
+        phone: newCourierPhone.trim(),
+        password: newCourierPassword.trim(),
+        vehicleType: newCourierVehicle,
+        vehicleNumber: newCourierPlate.trim() || 'بدون لوحة',
+        nationalId: newCourierNationalId.trim(),
+      });
+
+      setRegSuccessMessage(`تم تسجيل الكابتن ${registered.name} بنجاح، وربطه بالنظام السحابي!`);
+    } catch (err: any) {
+      setCourierError(err?.message || 'حدث خطأ أثناء حفظ بيانات المندوب، يرجى المحاولة ثانية');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -255,10 +289,20 @@ export const LoginScreen: React.FC<Props> = ({
                 <div className="pt-2">
                   <button
                     type="submit"
-                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center justify-center gap-2"
+                    disabled={isSubmitting}
+                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center justify-center gap-2"
                   >
-                    <Check className="w-4 h-4" />
-                    <span>تسجيل الدخول كمندوب</span>
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>جاري التحقق والدخول...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>تسجيل الدخول كمندوب</span>
+                      </>
+                    )}
                   </button>
                 </div>
 
@@ -394,13 +438,34 @@ export const LoginScreen: React.FC<Props> = ({
                   </div>
                 </div>
 
+                {regSuccessMessage && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{regSuccessMessage}</span>
+                  </div>
+                )}
+
+                {courierError && authMode === 'register_courier' && (
+                  <p className="text-xs text-rose-600 font-bold">{courierError}</p>
+                )}
+
                 <div className="pt-2">
                   <button
                     type="submit"
-                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center justify-center gap-1.5"
+                    disabled={isSubmitting}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center justify-center gap-1.5"
                   >
-                    <Check className="w-4 h-4" />
-                    <span>تسجيل الحساب ودخول الشاشة</span>
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>جاري الحفظ السحابي والتسجيل...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>تسجيل الحساب ودخول الشاشة</span>
+                      </>
+                    )}
                   </button>
                 </div>
 

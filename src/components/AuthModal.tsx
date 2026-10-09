@@ -96,31 +96,36 @@ export const AuthModal: React.FC<Props> = ({
   };
 
   // Handle Courier Registration
-  const handleRegisterCourier = (e: React.FormEvent) => {
+  const handleRegisterCourier = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!courierName || !courierPhone || !courierPassword) {
+    if (!courierName.trim() || !courierPhone.trim() || !courierPassword.trim()) {
       setCourierRegError('برجاء استكمال الاسم ورقم الهاتف وكلمة المرور للمندوب');
       return;
     }
 
-    store.registerCourier({
-      pharmacyId: courierPharmacyId || activePharmacyId,
-      name: courierName,
-      phone: courierPhone,
-      password: courierPassword,
-      vehicleType,
-      vehicleNumber: vehicleNumber || 'بدون لوحة',
-      nationalId: courierNationalId,
-      deliveryFeePerOrder: courierDeliveryFee,
-    });
-
-    setCourierName('');
-    setCourierPhone('');
-    setCourierPassword('');
-    setCourierNationalId('');
-    setVehicleNumber('');
     setCourierRegError('');
-    onClose();
+    try {
+      await store.registerCourierAsync({
+        pharmacyId: courierPharmacyId || activePharmacyId,
+        name: courierName.trim(),
+        phone: courierPhone.trim(),
+        password: courierPassword.trim(),
+        vehicleType,
+        vehicleNumber: vehicleNumber.trim() || 'بدون لوحة',
+        nationalId: courierNationalId.trim(),
+        deliveryFeePerOrder: courierDeliveryFee,
+      });
+
+      setCourierName('');
+      setCourierPhone('');
+      setCourierPassword('');
+      setCourierNationalId('');
+      setVehicleNumber('');
+      setCourierRegError('');
+      onClose();
+    } catch (err: any) {
+      setCourierRegError(err?.message || 'حدث خطأ أثناء حفظ بيانات المندوب');
+    }
   };
 
   // Handle Add Pharmacy
