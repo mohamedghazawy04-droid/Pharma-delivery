@@ -99,6 +99,7 @@ export const LiveMap: React.FC<Props> = ({
 
       const isSelected = courier.id === selectedCourierId;
       const isAlerting = courier.isStoppageAlertActive;
+      const isOffline = Boolean(courier.isOfflineAlertActive || courier.isInternetOnline === false);
       const isStationary = courier.currentLocation.isStationary;
 
       // Status color
@@ -110,6 +111,8 @@ export const LiveMap: React.FC<Props> = ({
 
       if (isAlerting) {
         ringColor = 'border-red-500 bg-red-600 animate-ping';
+      } else if (isOffline) {
+        ringColor = 'border-orange-500 bg-orange-600 animate-pulse';
       } else if (isStationary) {
         ringColor = 'border-amber-400 bg-amber-500';
       }
@@ -121,8 +124,8 @@ export const LiveMap: React.FC<Props> = ({
           [courier.currentLocation.lat, courier.currentLocation.lng],
           {
             radius: accuracyRadius,
-            color: '#10b981',
-            fillColor: '#10b981',
+            color: isOffline ? '#f97316' : '#10b981',
+            fillColor: isOffline ? '#f97316' : '#10b981',
             fillOpacity: 0.15,
             weight: 1.5,
             dashArray: '4, 4',
@@ -137,6 +140,10 @@ export const LiveMap: React.FC<Props> = ({
             isAlerting
               ? `<div class="absolute -top-6 bg-red-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full shadow animate-bounce">
                   🚨 متوقف!
+                </div>`
+              : isOffline
+              ? `<div class="absolute -top-6 bg-orange-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full shadow animate-pulse">
+                  📶 انقطاع النت!
                 </div>`
               : courier.currentLocation.isGpsLive
               ? `<div class="absolute -top-5 bg-emerald-600 text-white text-[9px] font-black px-1.5 py-0.2 rounded-full shadow flex items-center gap-0.5">
@@ -185,6 +192,14 @@ export const LiveMap: React.FC<Props> = ({
             <span style="font-size: 11px; background: #f1f5f9; padding: 2px 6px; border-radius: 6px;">${courier.vehicleType}</span>
           </div>
           ${
+            isOffline
+              ? `<div style="background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; font-size: 11px; font-weight: 800; padding: 4px 8px; border-radius: 6px; margin-bottom: 6px;">
+                  ⚠️ إنذار: تم رصد انقطاع الاتصال بالإنترنت بالهاتف منذ ${Math.floor((courier.offlineSeconds || 300) / 60)} دقائق!
+                  <div style="margin-top: 4px;"><a href="tel:${courier.phone}" style="color: #047857; text-decoration: underline; font-weight: bold;">📞 اتصال بالمندوب: ${courier.phone}</a></div>
+                </div>`
+              : ''
+          }
+          ${
             courier.currentLocation.isGpsLive
               ? `<div style="background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 6px; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
                   📡 بث GPS حقيقي مباشر (دقة ±${courier.currentLocation.accuracy || 5}م)
@@ -196,10 +211,16 @@ export const LiveMap: React.FC<Props> = ({
             ${courier.currentLocation.lat.toFixed(6)}, ${courier.currentLocation.lng.toFixed(6)}
           </div>
           <div style="font-size: 11px; margin-bottom: 4px;">
-            الحالة: <strong>${isStationary ? '⏸️ متوقف' : '🟢 يتحرك بسرعة ' + courier.currentLocation.speedKmH + ' كم/س'}</strong>
+            الحالة: <strong>${
+              isOffline
+                ? '📶 انقطاع الإنترنت بالهاتف'
+                : isStationary
+                ? '⏸️ متوقف'
+                : '🟢 يتحرك بسرعة ' + courier.currentLocation.speedKmH + ' كم/س'
+            }</strong>
           </div>
           ${
-            isStationary
+            isStationary && !isOffline
               ? `<div style="font-size: 11px; color: ${isAlerting ? '#dc2626' : '#d97706'}; font-weight: 700; margin-bottom: 8px;">
                   مدة التوقف: ${formatDurationSeconds(courier.currentLocation.stationarySeconds)}
                 </div>`

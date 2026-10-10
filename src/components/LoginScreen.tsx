@@ -17,13 +17,19 @@ import { store } from '../services/store';
 interface Props {
   pharmacies: Pharmacy[];
   activePharmacyId: string;
+  defaultMode?: 'pharmacist' | 'courier' | 'register_courier';
+  lockMode?: 'pharmacist' | 'courier';
 }
 
 export const LoginScreen: React.FC<Props> = ({
   pharmacies,
   activePharmacyId,
+  defaultMode = 'pharmacist',
+  lockMode,
 }) => {
-  const [authMode, setAuthMode] = useState<'pharmacist' | 'courier' | 'register_courier'>('pharmacist');
+  const [authMode, setAuthMode] = useState<'pharmacist' | 'courier' | 'register_courier'>(
+    lockMode === 'courier' ? 'courier' : defaultMode
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [regSuccessMessage, setRegSuccessMessage] = useState('');
 
@@ -136,38 +142,65 @@ export const LoginScreen: React.FC<Props> = ({
 
         {/* Card Container */}
         <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
-          {/* Main Top Role Toggle */}
-          <div className="grid grid-cols-2 border-b border-slate-200 bg-slate-50 text-xs font-bold text-center">
-            <button
-              onClick={() => {
-                setAuthMode('pharmacist');
-                setPharmaError('');
-              }}
-              className={`py-3.5 px-3 border-b-2 transition flex items-center justify-center gap-1.5 ${
-                authMode === 'pharmacist'
-                  ? 'border-emerald-600 text-emerald-800 bg-white font-black'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <UserCheck className="w-4 h-4 text-emerald-600" />
-              <span>تسجيل دخول الصيدلي</span>
-            </button>
+          {/* Main Top Role Toggle / Header */}
+          {lockMode === 'courier' ? (
+            <div className="py-4 px-4 bg-indigo-950 text-white text-center border-b border-indigo-900 flex items-center justify-center gap-2">
+              <Bike className="w-5 h-5 text-indigo-400" />
+              <div>
+                <strong className="text-sm block font-extrabold">تطبيق صفحة المندوب</strong>
+                <span className="text-[11px] text-indigo-300">تسجيل الدخول خاص بالمندوب فقط</span>
+              </div>
+            </div>
+          ) : lockMode === 'pharmacist' ? (
+            <div className="py-4 px-4 bg-emerald-950 text-white text-center border-b border-emerald-900 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-right">
+                <UserCheck className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <strong className="text-sm block font-extrabold">لوحة إدارة وتحكم الصيدلي</strong>
+                  <span className="text-[11px] text-emerald-300">تحكم كامل في الأوردرات والمناديب</span>
+                </div>
+              </div>
+              <a
+                href="?role=courier"
+                className="text-[11px] bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-lg text-emerald-200 transition"
+                title="فتح صفحة المندوب المستقلة"
+              >
+                صفحة المندوب ↗
+              </a>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 border-b border-slate-200 bg-slate-50 text-xs font-bold text-center">
+              <button
+                onClick={() => {
+                  setAuthMode('pharmacist');
+                  setPharmaError('');
+                }}
+                className={`py-3.5 px-3 border-b-2 transition flex items-center justify-center gap-1.5 ${
+                  authMode === 'pharmacist'
+                    ? 'border-emerald-600 text-emerald-800 bg-white font-black'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <UserCheck className="w-4 h-4 text-emerald-600" />
+                <span>تسجيل دخول الصيدلي</span>
+              </button>
 
-            <button
-              onClick={() => {
-                setAuthMode('courier');
-                setCourierError('');
-              }}
-              className={`py-3.5 px-3 border-b-2 transition flex items-center justify-center gap-1.5 ${
-                authMode === 'courier' || authMode === 'register_courier'
-                  ? 'border-indigo-600 text-indigo-800 bg-white font-black'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Bike className="w-4 h-4 text-indigo-600" />
-              <span>تسجيل دخول المندوب</span>
-            </button>
-          </div>
+              <button
+                onClick={() => {
+                  setAuthMode('courier');
+                  setCourierError('');
+                }}
+                className={`py-3.5 px-3 border-b-2 transition flex items-center justify-center gap-1.5 ${
+                  authMode === 'courier' || authMode === 'register_courier'
+                    ? 'border-indigo-600 text-indigo-800 bg-white font-black'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Bike className="w-4 h-4 text-indigo-600" />
+                <span>تسجيل دخول المندوب</span>
+              </button>
+            </div>
+          )}
 
           <div className="p-6">
             {/* 1. Pharmacist Manager Login */}

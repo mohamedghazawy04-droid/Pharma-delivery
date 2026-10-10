@@ -65,6 +65,8 @@ export interface CourierProfile {
 }
 
 export type OrderStatus = 'assigned' | 'picked_up' | 'in_transit' | 'delivered' | 'cancelled';
+// نوع الأوردر (عادي / مستعجل / روشتة / أدوية ثلاجة / مستلزمات)
+export type OrderType = 'عادي' | 'مستعجل' | 'روشتة' | 'أدوية ثلاجة' | 'مستلزمات';
 // نقدي أو فيزا أو انستاباي
 export type PaymentMethod = 'cash' | 'visa' | 'instapay';
 
@@ -72,8 +74,11 @@ export interface Order {
   id: string;
   pharmacyId: string;
   orderNumber: string; // auto sequence like #1, #2 or ORD-101
-  orderValue: number; // قيمة الأوردر فقط بالجنيه
-  deliveryFee: number; // قيمة المندوب (7 ج أو مخصص)
+  orderType?: OrderType; // نوع الأوردر
+  orderValue: number; // قيمة الأوردر الأساسية بالجنيه
+  deliveryFee: number; // قيمة المندوب (7 ج تضاف عند تمام التوصيل)
+  completedFeeAdded?: number; // 7 جنيه المضافة عند تمام الأوردر
+  totalValueWithDelivery?: number; // إجمالي القيمة بعد تمام التوصيل (قيمة الأوردر + 7 ج)
   paymentMethod: PaymentMethod; // 'cash' | 'visa' | 'instapay'
   courierId: string;
   status: OrderStatus;
@@ -83,7 +88,7 @@ export interface Order {
   isArchived: boolean; // إذا اختار الصيدلي حفظ الأوردرات تختفي من المندوب
   archivedAt?: string;
   quickNote?: string;
-  updatedAt?: string; // إذا قام الصيدلي بتعديل الأوردر
+  updatedAt?: string; // إذا قام الصيدلي بتعديل الأوردر (ينعكس فورياً عند المندوب)
 }
 
 export interface ShiftSummaryArchive {

@@ -16,8 +16,9 @@ import {
   Satellite,
   Gauge,
   Crosshair,
+  WifiOff,
 } from 'lucide-react';
-import { CourierProfile, Order, Pharmacy } from '../../types';
+import { CourierProfile, Order, Pharmacy, OrderType } from '../../types';
 import { store } from '../../services/store';
 import { LiveMap } from '../LiveMap';
 import {
@@ -42,14 +43,21 @@ export const CourierDashboard: React.FC<Props> = ({
   allCouriers,
   onOpenPiggyBankModal,
 }) => {
-  const [gpsActive, setGpsActive] = useState(Boolean(courier.currentLocation.isGpsLive));
+  const [gpsActive, setGpsActive] = useState(true);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'orders' | 'map'>('orders');
-
-  // Filter unarchived orders belonging to this courier
-  const courierActiveOrders = orders.filter(
-    (o) => o.courierId === courier.id && !o.isArchived
+  const [isDeviceOnline, setIsDeviceOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
   );
+
+  // Filter and sort active unarchived orders sequentially (#1, #2, #3, ...)
+  const courierActiveOrders = orders
+    .filter((o) => o.courierId === courier.id && !o.isArchived)
+    .sort((a, b) => {
+      const numA = parseInt(a.orderNumber.replace(/\D/g, '')) || 0;
+      const numB = parseInt(b.orderNumber.replace(/\D/g, '')) || 0;
+      return numA - numB;
+    });
 
   const pendingOrders = courierActiveOrders.filter(
     (o) => o.status !== 'delivered' && o.status !== 'cancelled'
@@ -58,7 +66,70 @@ export const CourierDashboard: React.FC<Props> = ({
   const isAlerting = courier.isStoppageAlertActive;
   const isStationary = courier.currentLocation.isStationary;
 
-  // Real device GPS watchPosition with high accuracy and reverse geocoding
+  // 1. Send immediate heartbeat on mount and keep periodic pulse every 15s
+  useEffect(() => {
+    store.sendCourierHeartbeat(courier.id, navigator.onLine);
+    const interval = setInterval(() => {
+      store.sendCourierHeartbeat(courier.id, navigator.onLine);
+    }, 15000);
+
+    const handleOnline = () => {
+      setIsDeviceOnline(true);
+      store.setCourierInternetStatus(courier.id, true);
+    };
+    const handleOffline = () => {
+      setIsDeviceOnline(false);
+      store.setCourierInternetStatus(courier.id, false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [courier.id]);
+
+  // 2. Instant initial GPS fix on screen open
+  useEffect(() => {
+    if ('geolocation' in navigator) {
+      requestNotificationPermission();
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          setGpsError(null);
+          let realAddr = courier.currentLocation.address;
+          try {
+            realAddr = await fetchRealAddressFromCoords(
+              pos.coords.latitude,
+              pos.coords.longitude
+            );
+          } catch (e) {}
+
+          store.updateCourierGPS(
+            courier.id,
+            pos.coords.latitude,
+            pos.coords.longitude,
+            pos.coords.speed,
+            pos.coords.accuracy,
+            pos.coords.heading,
+            pos.coords.altitude,
+            realAddr
+          );
+        },
+        (err) => {
+          console.warn('Initial GPS fetch error:', err);
+          if (err.code === 1) {
+            setGpsError('يرجى السماح بصلاحية الموقع (GPS) من المتصفح لبث موقعك الحقيقي للصيدلية.');
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    }
+  }, [courier.id]);
+
+  // 3. Real device continuous GPS watchPosition with high accuracy and reverse geocoding
   useEffect(() => {
     let watchId: number | null = null;
     if (gpsActive && 'geolocation' in navigator) {
@@ -154,6 +225,23 @@ export const CourierDashboard: React.FC<Props> = ({
 
   return (
     <div className="space-y-6">
+      {/* Offline Alert Banner (حفظ كامل للبيانات بدون إنترنت) */}
+      {!isDeviceOnline && (
+        <div className="p-4 bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 text-white rounded-3xl flex items-center gap-3.5 shadow-lg border-2 border-amber-400 animate-pulse">
+          <div className="p-2.5 bg-white/20 rounded-2xl shrink-0">
+            <WifiOff className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <strong className="text-sm block font-black">
+              أنت حالياً في وضع عدم الاتصال (بدون إنترنت)
+            </strong>
+            <p className="text-xs text-amber-100 mt-0.5">
+              جميع بياناتك وأوردراتك وحصالتك (والـ 7 جنيه المضافة لكل أوردر تمام) محفوظة ومؤمنة بالكامل على هاتفك ولن تتأثر بإغلاق الموبايل أو إعادة تشغيله.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Identity & Pharmacy Association */}
       <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-xs">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -197,7 +285,16 @@ export const CourierDashboard: React.FC<Props> = ({
               title="تجربة رنين جرس إنذار التوقف 5 دقائق فوراً"
             >
               <AlertTriangle className="w-3.5 h-3.5" />
-              <span>فحص إنذار 5 دقائق 🔔</span>
+              <span>فحص إنذار التوقف 5د 🔔</span>
+            </button>
+
+            <button
+              onClick={() => store.simulateOffline(courier.id, 5)}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-xl text-xs font-bold transition"
+              title="تجربة رنين إنذار انقطاع النت 5 دقائق فوراً"
+            >
+              <Radio className="w-3.5 h-3.5 text-amber-600" />
+              <span>فحص إنذار غلق النت 5د 📶</span>
             </button>
 
             <button
@@ -479,7 +576,7 @@ export const CourierDashboard: React.FC<Props> = ({
                     key={order.id}
                     className={`bg-white rounded-3xl p-5 border transition-all ${
                       isDelivered
-                        ? 'border-emerald-200 bg-emerald-50/20 opacity-80'
+                        ? 'border-emerald-200 bg-emerald-50/20'
                         : order.updatedAt
                         ? 'border-amber-400 shadow-md ring-2 ring-amber-300/60'
                         : 'border-slate-200 shadow-xs hover:border-slate-300'
@@ -487,8 +584,8 @@ export const CourierDashboard: React.FC<Props> = ({
                   >
                     {/* Live Update Notification from Pharmacist */}
                     {order.updatedAt && (
-                      <div className="mb-2 px-2.5 py-1 bg-amber-100 text-amber-900 rounded-lg text-[11px] font-extrabold flex items-center justify-between animate-pulse">
-                        <span>⚡ تم تعديل بيانات الأوردر من قِبل الصيدلي الآن</span>
+                      <div className="mb-2 px-3 py-1.5 bg-amber-100 text-amber-950 rounded-xl text-xs font-black flex items-center justify-between animate-pulse">
+                        <span>⚡ قام الصيدلي بتحديث الأوردر: ({order.orderType || 'عادي'} - {order.orderValue} ج)</span>
                         <span className="font-mono text-[10px]">
                           {new Date(order.updatedAt).toLocaleTimeString('ar-EG', {
                             hour: '2-digit',
@@ -498,26 +595,36 @@ export const CourierDashboard: React.FC<Props> = ({
                       </div>
                     )}
 
-                    {/* Value only header */}
-                    <div className="flex items-start justify-between gap-2 pb-3 border-b border-slate-100">
-                      <div>
-                        <span className="font-mono font-black text-base text-indigo-700 block">
+                    {/* Order Header: Sequential Order Number + Type Badge */}
+                    <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-black text-lg text-indigo-700">
                           أوردر {order.orderNumber}
                         </span>
-                        <span className="text-xs text-slate-400 font-mono">
-                          {new Date(order.assignedAt).toLocaleTimeString('ar-EG', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                        {/* Order Type Badge */}
+                        <span
+                          className={`text-xs px-2.5 py-1 rounded-full font-bold inline-flex items-center gap-1 ${
+                            order.orderType === 'مستعجل'
+                              ? 'bg-red-100 text-red-800'
+                              : order.orderType === 'أدوية ثلاجة'
+                              ? 'bg-blue-100 text-blue-800'
+                              : order.orderType === 'روشتة'
+                              ? 'bg-purple-100 text-purple-800'
+                              : 'bg-emerald-100 text-emerald-800'
+                          }`}
+                        >
+                          {order.orderType === 'عادي' && '🟢 عادي'}
+                          {order.orderType === 'مستعجل' && '⚡ مستعجل'}
+                          {order.orderType === 'روشتة' && '📝 روشتة'}
+                          {order.orderType === 'أدوية ثلاجة' && '❄️ ثلاجة'}
+                          {order.orderType === 'مستلزمات' && '🩹 مستلزمات'}
+                          {!order.orderType && '🟢 عادي'}
                         </span>
                       </div>
 
-                      <div className="text-left">
-                        <span className="text-xl font-black font-mono text-slate-900 block">
-                          {order.orderValue} جنيه
-                        </span>
+                      <div>
                         <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-block ${
+                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full inline-block ${
                             order.paymentMethod === 'cash'
                               ? 'bg-emerald-100 text-emerald-800'
                               : order.paymentMethod === 'visa'
@@ -532,61 +639,76 @@ export const CourierDashboard: React.FC<Props> = ({
                       </div>
                     </div>
 
+                    {/* Value & Delivery Status Box */}
+                    <div className="my-3">
+                      {isDelivered ? (
+                        <div className="p-3.5 bg-emerald-50/80 rounded-2xl border border-emerald-200">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="text-xs text-emerald-800 font-bold block">
+                                قيمة الأوردر بعد التمام (+7 ج):
+                              </span>
+                              <div className="font-mono font-black text-xl text-emerald-950 mt-0.5">
+                                <span>{order.orderValue} ج + 7 ج = </span>
+                                <span className="underline">{order.orderValue + 7} جنيه</span>
+                              </div>
+                            </div>
+                            <span className="px-3 py-1 bg-emerald-600 text-white rounded-xl text-xs font-black flex items-center gap-1 shadow-2xs">
+                              <CheckCircle className="w-4 h-4" />
+                              <span>تم التوصيل ✔️</span>
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-emerald-700 font-bold mt-1">
+                            تم إضافة عمولة 7 جنيه لحصالتك ومحفظتك بنجاح
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="text-xs text-slate-500 font-bold block">
+                                قيمة الأوردر الأساسية:
+                              </span>
+                              <div className="font-mono font-black text-2xl text-slate-900 mt-0.5">
+                                {order.orderValue} جنيه
+                              </div>
+                            </div>
+                            <span className="px-3 py-1 bg-amber-100 text-amber-900 rounded-xl text-xs font-bold border border-amber-200 flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-amber-600" />
+                              <span>لم يتم التوصيل</span>
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 font-medium mt-1">
+                            عند تمام الأوردر سيضاف +7 جنيه كعمولة مباشرة في حصالتك
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
                     {order.quickNote && (
                       <div className="my-2 p-2 bg-slate-50 rounded-xl text-xs text-slate-600 font-medium">
-                        ملاحظة: {order.quickNote}
+                        ملاحظة من الصيدلي: {order.quickNote}
                       </div>
                     )}
 
-                    {/* Commission Box */}
-                    <div className="my-3 bg-amber-50/70 p-3 rounded-xl border border-amber-200 flex items-center justify-between text-xs">
-                      <span className="text-amber-900 font-bold flex items-center gap-1">
-                        <Coins className="w-3.5 h-3.5 text-amber-600" />
-                        عمولتك في الحصالة من هذا الأوردر:
-                      </span>
-                      <span className="font-mono font-extrabold text-amber-950 text-base">
-                        +{order.deliveryFee} جنيه
-                      </span>
-                    </div>
-
                     {/* Step Actions */}
                     <div className="pt-2 border-t border-slate-100 space-y-2">
-                      {order.status === 'assigned' && (
-                        <button
-                          onClick={() => handleUpdateStatus(order.id, 'picked_up')}
-                          className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-1.5"
-                        >
-                          <Package className="w-4 h-4" />
-                          <span>استلمت الأوردر من الصيدلية</span>
-                        </button>
-                      )}
-
-                      {order.status === 'picked_up' && (
-                        <button
-                          onClick={() => handleUpdateStatus(order.id, 'in_transit')}
-                          className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-1.5"
-                        >
-                          <Navigation className="w-4 h-4" />
-                          <span>في الطريق للعميل الآن</span>
-                        </button>
-                      )}
-
-                      {order.status === 'in_transit' && (
+                      {!isDelivered && (
                         <button
                           onClick={() => handleUpdateStatus(order.id, 'delivered')}
-                          className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-1.5"
+                          className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black shadow-md transition flex items-center justify-center gap-2"
                         >
                           <CheckCircle className="w-4 h-4" />
                           <span>
-                            تم التسليم والتحصيل ({order.orderValue} ج {order.paymentMethod === 'cash' ? 'نقدي' : order.paymentMethod === 'visa' ? 'فيزا' : 'انستاباي'})
+                            اضغط لتأكيد تمام الأوردر والتسليم (+7 جنيه لحصالتك فوراً)
                           </span>
                         </button>
                       )}
 
-                      {order.status === 'delivered' && (
-                        <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1">
-                          <Check className="w-4 h-4" />
-                          <span>تم تسليم الأوردر وإضافة {order.deliveryFee} ج لحصالتك</span>
+                      {isDelivered && (
+                        <div className="p-2.5 bg-emerald-100 text-emerald-900 rounded-xl text-xs font-black text-center flex items-center justify-center gap-1.5">
+                          <Check className="w-4 h-4 text-emerald-700" />
+                          <span>الأوردر مكتمل - تم إضافة 7 جنيه لحصالتك ومحفظتك</span>
                         </div>
                       )}
                     </div>

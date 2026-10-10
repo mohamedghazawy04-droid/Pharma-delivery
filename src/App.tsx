@@ -37,14 +37,31 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  const isAuthenticated = state.authenticatedAsPharmacist || Boolean(state.authenticatedCourierId);
+  const isCourierLink =
+    typeof window !== 'undefined' &&
+    (new URLSearchParams(window.location.search).get('role') === 'courier' ||
+      new URLSearchParams(window.location.search).get('mode') === 'courier');
 
-  // If user is not yet logged in, show the landing LoginScreen
-  if (!isAuthenticated) {
+  // If opened as courier link: courier must be authenticated
+  if (isCourierLink && !state.authenticatedCourierId) {
     return (
       <LoginScreen
         pharmacies={state.pharmacies}
         activePharmacyId={state.activePharmacyId}
+        defaultMode="courier"
+        lockMode="courier"
+      />
+    );
+  }
+
+  // If opened as pharmacist dashboard: pharmacist must be authenticated
+  if (!isCourierLink && !state.authenticatedAsPharmacist) {
+    return (
+      <LoginScreen
+        pharmacies={state.pharmacies}
+        activePharmacyId={state.activePharmacyId}
+        defaultMode="pharmacist"
+        lockMode="pharmacist"
       />
     );
   }
@@ -61,6 +78,8 @@ export default function App() {
   );
 
   const currentCourier =
+    (state.authenticatedCourierId &&
+      state.couriers.find((c) => c.id === state.authenticatedCourierId)) ||
     pharmacyCouriers.find((c) => c.id === state.currentCourierId) ||
     pharmacyCouriers[0] ||
     state.couriers[0];
@@ -154,13 +173,34 @@ export default function App() {
             onOpenGoogleDrive={() => setIsGoogleDriveOpen(true)}
           />
         ) : currentCourier ? (
-          <CourierDashboard
-            courier={currentCourier}
-            orders={state.orders}
-            pharmacy={activePharmacy}
-            allCouriers={pharmacyCouriers}
-            onOpenPiggyBankModal={() => handleOpenPiggyBankForCourier()}
-          />
+          <div>
+            {state.authenticatedAsPharmacist && (
+              <div className="mb-4 p-3.5 bg-amber-500 text-white rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-2 shadow-md">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">👁️</span>
+                  <div>
+                    <strong className="text-xs sm:text-sm block">وضع المعاينة والإشراف المباشر على المندوب</strong>
+                    <span className="text-[11px] text-amber-100">
+                      أنت الصيدلي المسئول وتتحكم في حساب الكابتن ({currentCourier.name}) ولست المندوب نفسه
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => store.setRole('pharmacist')}
+                  className="px-4 py-2 bg-white text-amber-900 rounded-xl text-xs font-black hover:bg-amber-50 transition shadow-xs"
+                >
+                  العودة للوحة تحكم الصيدلي ⬅️
+                </button>
+              </div>
+            )}
+            <CourierDashboard
+              courier={currentCourier}
+              orders={state.orders}
+              pharmacy={activePharmacy}
+              allCouriers={pharmacyCouriers}
+              onOpenPiggyBankModal={() => handleOpenPiggyBankForCourier()}
+            />
+          </div>
         ) : (
           <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-xs space-y-4 max-w-lg mx-auto">
             <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center text-3xl mx-auto">

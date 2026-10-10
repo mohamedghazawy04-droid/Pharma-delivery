@@ -230,6 +230,27 @@ app.post('/api/courier/location', (req, res) => {
   res.json({ success: true });
 });
 
+// 3.4 Periodic Heartbeat / Internet status check
+app.post('/api/courier/heartbeat', (req, res) => {
+  const { courierId, isInternetOnline, lastSeenTimestamp } = req.body;
+  if (!courierId) {
+    return res.status(400).json({ success: false, error: 'معرف المندوب مطلوب' });
+  }
+
+  const current = readCloudData();
+  const idx = current.couriers.findIndex((c) => c.id === courierId);
+  if (idx >= 0) {
+    current.couriers[idx].lastSeenTimestamp = lastSeenTimestamp || Date.now();
+    current.couriers[idx].isInternetOnline = isInternetOnline !== undefined ? isInternetOnline : true;
+    if (isInternetOnline !== false) {
+      current.couriers[idx].isOfflineAlertActive = false;
+      current.couriers[idx].offlineSeconds = 0;
+    }
+    saveCloudData(current);
+  }
+  res.json({ success: true, couriers: current.couriers });
+});
+
 // 4. Add Pharmacy
 app.post('/api/pharmacy/add', (req, res) => {
   const pharmacy = req.body;

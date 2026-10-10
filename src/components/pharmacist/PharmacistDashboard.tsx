@@ -31,6 +31,8 @@ import {
   FileText,
   Phone,
   Trash2,
+  WifiOff,
+  Radio,
 } from 'lucide-react';
 import {
   CourierProfile,
@@ -38,6 +40,7 @@ import {
   Pharmacy,
   ShiftSummaryArchive,
   PaymentMethod,
+  OrderType,
 } from '../../types';
 import { store } from '../../services/store';
 import { notificationService, DeliveryAlertItem } from '../../services/notificationService';
@@ -90,6 +93,7 @@ export const PharmacistDashboard: React.FC<Props> = ({
 
   // Fast inline order entry states (قيمة فقط لسرعة العمل)
   const [fastOrderValue, setFastOrderValue] = useState('');
+  const [fastOrderType, setFastOrderType] = useState<OrderType>('عادي');
   const [fastPaymentMethod, setFastPaymentMethod] = useState<PaymentMethod>('cash');
   const [fastCourierId, setFastCourierId] = useState(couriers[0]?.id || '');
 
@@ -147,8 +151,14 @@ export const PharmacistDashboard: React.FC<Props> = ({
   const pharmacyOrders = orders.filter((o) => o.pharmacyId === pharmacy.id);
   const pharmacyShiftSummaries = shiftSummaries.filter((s) => s.pharmacyId === pharmacy.id);
 
-  // Active unarchived orders
-  const activeOrders = pharmacyOrders.filter((o) => !o.isArchived);
+  // Active unarchived orders sorted consecutively and sequentially (#1, #2, #3, ...)
+  const activeOrders = pharmacyOrders
+    .filter((o) => !o.isArchived)
+    .sort((a, b) => {
+      const numA = parseInt(a.orderNumber.replace(/\D/g, '')) || 0;
+      const numB = parseInt(b.orderNumber.replace(/\D/g, '')) || 0;
+      return numA - numB;
+    });
   const archivedOrders = pharmacyOrders.filter((o) => o.isArchived);
 
   // Stats
@@ -173,6 +183,7 @@ export const PharmacistDashboard: React.FC<Props> = ({
     store.addFastOrder({
       pharmacyId: pharmacy.id,
       orderValue: val,
+      orderType: fastOrderType,
       paymentMethod: fastPaymentMethod,
       courierId: targetCourier,
     });
@@ -540,6 +551,34 @@ export const PharmacistDashboard: React.FC<Props> = ({
               ))}
             </div>
 
+            {/* Order Type: عادي / مستعجل / روشتة / ثلاجة / مستلزمات */}
+            <div className="flex bg-white p-1 rounded-xl border border-emerald-300">
+              {(['عادي', 'مستعجل', 'روشتة', 'أدوية ثلاجة', 'مستلزمات'] as OrderType[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setFastOrderType(t)}
+                  className={`px-2 py-1 text-xs font-bold rounded-lg transition ${
+                    fastOrderType === t
+                      ? t === 'مستعجل'
+                        ? 'bg-red-600 text-white shadow-xs'
+                        : t === 'أدوية ثلاجة'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : t === 'روشتة'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {t === 'عادي' && '🟢 عادي'}
+                  {t === 'مستعجل' && '⚡ مستعجل'}
+                  {t === 'روشتة' && '📝 روشتة'}
+                  {t === 'أدوية ثلاجة' && '❄️ ثلاجة'}
+                  {t === 'مستلزمات' && '🩹 مستلزمات'}
+                </button>
+              ))}
+            </div>
+
             {/* Payment method toggle: نقدي أو فيزا أو انستاباي */}
             <div className="flex bg-white p-1 rounded-xl border border-emerald-300">
               <button
@@ -852,6 +891,7 @@ export const PharmacistDashboard: React.FC<Props> = ({
               {displayedCouriers.map((courier) => {
                 const courierOrders = activeOrders.filter((o) => o.courierId === courier.id);
                 const isAlerting = courier.isStoppageAlertActive;
+                const isOffline = Boolean(courier.isOfflineAlertActive || courier.isInternetOnline === false);
                 const isStationary = courier.currentLocation.isStationary;
                 const courierPharma = pharmacies.find((p) => p.id === courier.pharmacyId);
                 const isOtherBranch = courier.pharmacyId !== pharmacy.id;
@@ -862,6 +902,8 @@ export const PharmacistDashboard: React.FC<Props> = ({
                     className={`bg-white rounded-3xl p-5 border transition-all ${
                       isAlerting
                         ? 'border-red-500 shadow-md ring-2 ring-red-400'
+                        : isOffline
+                        ? 'border-orange-500 shadow-md ring-2 ring-orange-400'
                         : 'border-slate-200 shadow-xs hover:border-slate-300'
                     }`}
                   >
@@ -872,6 +914,8 @@ export const PharmacistDashboard: React.FC<Props> = ({
                           className={`w-11 h-11 rounded-2xl flex items-center justify-center text-lg shrink-0 ${
                             isAlerting
                               ? 'bg-red-100 text-red-600 animate-bounce'
+                              : isOffline
+                              ? 'bg-orange-100 text-orange-600 animate-pulse'
                               : 'bg-indigo-50 text-indigo-700'
                           }`}
                         >
@@ -890,12 +934,18 @@ export const PharmacistDashboard: React.FC<Props> = ({
                       <div className="flex items-center gap-1 shrink-0">
                         <span
                           className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                            courier.isOnDuty && !courier.shift.isEnded
+                            isOffline
+                              ? 'bg-orange-100 text-orange-900 border border-orange-300'
+                              : courier.isOnDuty && !courier.shift.isEnded
                               ? 'bg-emerald-100 text-emerald-800'
                               : 'bg-slate-100 text-slate-600'
                           }`}
                         >
-                          {courier.isOnDuty && !courier.shift.isEnded ? 'في الشيفت' : 'خارج الشيفت'}
+                          {isOffline
+                            ? 'انقطاع النت ⚠️'
+                            : courier.isOnDuty && !courier.shift.isEnded
+                            ? 'في الشيفت'
+                            : 'خارج الشيفت'}
                         </span>
 
                         {/* Direct Call Button */}
@@ -917,6 +967,24 @@ export const PharmacistDashboard: React.FC<Props> = ({
                         </button>
                       </div>
                     </div>
+
+                    {/* Offline Internet Disconnect Warning Card */}
+                    {isOffline && (
+                      <div className="mb-3 p-2.5 bg-orange-50 border border-orange-300 rounded-2xl text-xs text-orange-950 flex items-center justify-between gap-2 shadow-2xs animate-pulse">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <WifiOff className="w-4 h-4 text-orange-700 shrink-0" />
+                          <span className="font-extrabold text-[11px] truncate">
+                            ⚠️ النت مقطوع منذ {Math.max(1, Math.floor((courier.offlineSeconds || 300) / 60))} دقيقة!
+                          </span>
+                        </div>
+                        <a
+                          href={`tel:${courier.phone}`}
+                          className="px-2 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-[10px] font-extrabold shrink-0 shadow-xs"
+                        >
+                          اتصال
+                        </a>
+                      </div>
+                    )}
 
                     {/* Pharmacy Branch Indicator & Switcher */}
                     {isOtherBranch && (
@@ -1040,6 +1108,16 @@ export const PharmacistDashboard: React.FC<Props> = ({
                         <span>حفظ وأرشفة أوردرات المندوب (تفريغ صفحته)</span>
                       </button>
 
+                      {/* Action 1.5: Supervisor Direct Inspection of Courier Dashboard */}
+                      <button
+                        onClick={() => store.setRole('courier', courier.id)}
+                        className="w-full py-2 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-2xs"
+                        title="معاينة شاشة المندوب وأوردراته كمدير صيدلي مشرف بدون تغيير هويتك"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>معاينة شاشة {courier.name} (إشراف الصيدلي) 👁️</span>
+                      </button>
+
                       {/* Action 2: End Shift */}
                       {courier.isOnDuty && !courier.shift.isEnded ? (
                         <button
@@ -1059,21 +1137,31 @@ export const PharmacistDashboard: React.FC<Props> = ({
                         </button>
                       )}
 
-                      {/* Real Stoppage Test Helpers */}
-                      <div className="grid grid-cols-2 gap-1.5 pt-1">
+                      {/* Real Stoppage & Offline Test Helpers */}
+                      <div className="grid grid-cols-3 gap-1 pt-1">
                         <button
                           onClick={() => store.simulateCourierMovement(courier.id)}
-                          className="py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition"
+                          className="py-1.5 px-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition"
+                          title="تحريك موقع المندوب"
                         >
                           <Navigation className="w-3 h-3 text-emerald-600" />
-                          <span>تحريك تجريبي</span>
+                          <span>تحريك</span>
                         </button>
                         <button
                           onClick={() => store.simulateStoppage(courier.id, 305)}
-                          className="py-1.5 px-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition"
+                          className="py-1.5 px-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition"
+                          title="فحص جرس إنذار التوقف 5 دقائق"
                         >
                           <AlertTriangle className="w-3 h-3 text-rose-600" />
-                          <span>فحص جرس 5د</span>
+                          <span>توقف 5د</span>
+                        </button>
+                        <button
+                          onClick={() => store.simulateOffline(courier.id, 5)}
+                          className="py-1.5 px-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition"
+                          title="فحص إنذار انقطاع الإنترنت 5 دقائق"
+                        >
+                          <WifiOff className="w-3 h-3 text-orange-600" />
+                          <span>غلق النت 5د</span>
                         </button>
                       </div>
                     </div>
@@ -1120,31 +1208,122 @@ export const PharmacistDashboard: React.FC<Props> = ({
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-400 font-bold">
                     <th className="pb-3 pr-2">رقم الأوردر</th>
+                    <th className="pb-3">نوع الأوردر (تغيير فوري)</th>
                     <th className="pb-3">قيمة الأوردر</th>
-                    <th className="pb-3">طريقة الدفع</th>
+                    <th className="pb-3">حالة التوصيل</th>
+                    <th className="pb-3">طريقة التحصيل</th>
                     <th className="pb-3">المندوب المسند له</th>
-                    <th className="pb-3">عمولة المندوب (المحفظة)</th>
                     <th className="pb-3">وقت الإسناد</th>
-                    <th className="pb-3">الحالة</th>
                     <th className="pb-3 pl-2 text-center">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {activeOrders.map((order) => {
                     const assignedCourier = pharmacyCouriers.find((c) => c.id === order.courierId);
+                    const isDelivered = order.status === 'delivered';
+
                     return (
                       <tr key={order.id} className="hover:bg-slate-50 transition">
+                        {/* 1. Sequential Order Number */}
                         <td className="py-3 pr-2 font-mono font-black text-slate-900 text-sm">
                           {order.orderNumber}
                         </td>
-                        <td className="py-3 font-mono font-extrabold text-slate-900 text-base">
-                          {order.orderValue} جنيه
+
+                        {/* 2. Order Type: Instant change by Pharmacist */}
+                        <td className="py-3">
+                          <select
+                            value={order.orderType || 'عادي'}
+                            onChange={(e) =>
+                              store.updateOrder(order.id, { orderType: e.target.value as OrderType })
+                            }
+                            className={`px-2.5 py-1 rounded-xl text-xs font-bold border cursor-pointer transition ${
+                              order.orderType === 'مستعجل'
+                                ? 'bg-red-50 text-red-900 border-red-300'
+                                : order.orderType === 'أدوية ثلاجة'
+                                ? 'bg-blue-50 text-blue-900 border-blue-300'
+                                : order.orderType === 'روشتة'
+                                ? 'bg-purple-50 text-purple-900 border-purple-300'
+                                : 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                            }`}
+                            title="تغيير نوع الأوردر فورياً (ينعكس لحظياً عند المندوب)"
+                          >
+                            <option value="عادي">🟢 عادي</option>
+                            <option value="مستعجل">⚡ مستعجل</option>
+                            <option value="روشتة">📝 روشتة</option>
+                            <option value="أدوية ثلاجة">❄️ ثلاجة</option>
+                            <option value="مستلزمات">🩹 مستلزمات</option>
+                          </select>
+                        </td>
+
+                        {/* 3. Order Value + 7 EGP when completed */}
+                        <td className="py-3 font-mono">
+                          {isDelivered ? (
+                            <div>
+                              <span className="font-extrabold text-slate-700 text-xs">
+                                {order.orderValue} ج + 7 ج ={' '}
+                              </span>
+                              <strong className="font-black text-emerald-800 text-sm underline">
+                                {order.orderValue + 7} جنيه
+                              </strong>
+                              <span className="text-[10px] text-emerald-700 font-bold block">
+                                (تم إضافة 7 ج عند التمام)
+                              </span>
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="flex items-center gap-1">
+                                <span className="font-extrabold text-slate-900 text-base">
+                                  {order.orderValue} جنيه
+                                </span>
+                                <button
+                                  onClick={() => onOpenEditOrder(order)}
+                                  className="p-1 text-slate-400 hover:text-amber-600 transition"
+                                  title="تعديل قيمة الأوردر"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-medium block">
+                                (+7 ج تضاف فوراً عند التمام)
+                              </span>
+                            </div>
+                          )}
                           {order.quickNote && (
-                            <span className="block text-[10px] text-slate-500 font-normal">
+                            <span className="block text-[10px] text-slate-500 font-normal mt-0.5">
                               ({order.quickNote})
                             </span>
                           )}
                         </td>
+
+                        {/* 4. Delivery Status: تم / لم يتم */}
+                        <td className="py-3">
+                          {isDelivered ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-2.5 py-1 bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-extrabold flex items-center gap-1">
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>تم التوصيل ✔️</span>
+                              </span>
+                              <button
+                                onClick={() => store.updateOrderStatus(order.id, 'assigned')}
+                                className="text-[10px] text-slate-400 hover:text-slate-700 underline"
+                                title="إلغاء تمام التوصيل"
+                              >
+                                تراجع
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => store.updateOrderStatus(order.id, 'delivered')}
+                              className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-bold flex items-center gap-1 transition shadow-2xs"
+                              title="اضغط لتأكيد تمام الأوردر وإضافة 7 ج فوراً"
+                            >
+                              <Clock className="w-3.5 h-3.5 text-amber-600" />
+                              <span>لم يتم (اضغط للتمام +7 ج)</span>
+                            </button>
+                          )}
+                        </td>
+
+                        {/* 5. Payment Method */}
                         <td className="py-3">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span
@@ -1161,12 +1340,17 @@ export const PharmacistDashboard: React.FC<Props> = ({
                               {order.paymentMethod === 'instapay' && '⚡ انستاباي'}
                             </span>
                             {order.updatedAt && (
-                              <span className="text-[9px] bg-amber-100 text-amber-800 px-1 rounded font-bold" title="تم تعديل هذا الأوردر من قِبل الصيدلي">
+                              <span
+                                className="text-[9px] bg-amber-100 text-amber-800 px-1 rounded font-bold"
+                                title="تم تعديل هذا الأوردر من قِبل الصيدلي"
+                              >
                                 معدل ⚡
                               </span>
                             )}
                           </div>
                         </td>
+
+                        {/* 6. Assigned Courier */}
                         <td className="py-3">
                           <div className="font-bold text-indigo-700">
                             {assignedCourier ? assignedCourier.name : 'غير محدد'}
@@ -1175,38 +1359,23 @@ export const PharmacistDashboard: React.FC<Props> = ({
                             {assignedCourier?.vehicleType}
                           </div>
                         </td>
-                        <td className="py-3 font-mono font-bold text-amber-700 text-sm">
-                          +{order.deliveryFee} ج
-                        </td>
+
+                        {/* 7. Assigned time */}
                         <td className="py-3 text-[11px] text-slate-500 font-mono">
                           {new Date(order.assignedAt).toLocaleTimeString('ar-EG', {
                             hour: '2-digit',
                             minute: '2-digit',
                           })}
                         </td>
-                        <td className="py-3">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                              order.status === 'delivered'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : order.status === 'in_transit'
-                                ? 'bg-indigo-100 text-indigo-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}
-                          >
-                            {order.status === 'assigned' && 'تم الإسناد'}
-                            {order.status === 'picked_up' && 'تم الاستلام'}
-                            {order.status === 'in_transit' && 'في الطريق'}
-                            {order.status === 'delivered' && 'تم التسليم والتحصيل'}
-                          </span>
-                        </td>
+
+                        {/* 8. Actions */}
                         <td className="py-3 pl-2 text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            {/* Edit Order (نقدي / فيزا / انستاباي / القيمة) */}
+                            {/* Detailed Edit Order */}
                             <button
                               onClick={() => onOpenEditOrder(order)}
                               className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition"
-                              title="تعديل الأوردر (نقدي/فيزا/انستاباي/القيمة)"
+                              title="تعديل تفصيلي (القيمة / النوع / التحصيل / الملاحظات)"
                             >
                               <Edit3 className="w-4 h-4" />
                             </button>
@@ -1219,17 +1388,6 @@ export const PharmacistDashboard: React.FC<Props> = ({
                             >
                               <ArrowRightLeft className="w-4 h-4" />
                             </button>
-
-                            {/* Mark Delivered if done */}
-                            {order.status !== 'delivered' && (
-                              <button
-                                onClick={() => store.updateOrderStatus(order.id, 'delivered')}
-                                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
-                                title="تحديد كـ تم التسليم والتحصيل"
-                              >
-                                <CheckCircle className="w-4 h-4" />
-                              </button>
-                            )}
                           </div>
                         </td>
                       </tr>

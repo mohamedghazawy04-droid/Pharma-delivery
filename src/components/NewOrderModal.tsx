@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, DollarSign, Bike, Check, Zap, AlertTriangle } from 'lucide-react';
-import { CourierProfile, PaymentMethod } from '../types';
+import { CourierProfile, PaymentMethod, OrderType } from '../types';
 import { store } from '../services/store';
 
 interface Props {
@@ -17,6 +17,7 @@ export const NewOrderModal: React.FC<Props> = ({
   globalDeliveryFee,
 }) => {
   const [orderValue, setOrderValue] = useState<string>('');
+  const [orderType, setOrderType] = useState<OrderType>('عادي');
   const [selectedCourierId, setSelectedCourierId] = useState(couriers[0]?.id || '');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [customDeliveryFee, setCustomDeliveryFee] = useState<number>(globalDeliveryFee || 7);
@@ -27,6 +28,7 @@ export const NewOrderModal: React.FC<Props> = ({
   useEffect(() => {
     if (isOpen) {
       setFormError('');
+      setOrderType('عادي');
       if (couriers.length > 0 && !selectedCourierId) {
         setSelectedCourierId(couriers[0].id);
         setCustomDeliveryFee(couriers[0].deliveryFeePerOrder || globalDeliveryFee || 7);
@@ -44,7 +46,7 @@ export const NewOrderModal: React.FC<Props> = ({
     setFormError('');
     const courier = couriers.find((c) => c.id === courierId);
     if (courier) {
-      setCustomDeliveryFee(courier.deliveryFeePerOrder);
+      setCustomDeliveryFee(courier.deliveryFeePerOrder || 7);
     }
   };
 
@@ -64,6 +66,7 @@ export const NewOrderModal: React.FC<Props> = ({
 
     store.addFastOrder({
       orderValue: numVal,
+      orderType,
       paymentMethod,
       courierId: selectedCourierId,
       deliveryFee: customDeliveryFee,
@@ -153,6 +156,40 @@ export const NewOrderModal: React.FC<Props> = ({
                   className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-mono font-bold transition"
                 >
                   {preset}ج
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Order Type (نوع الأوردر) */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+              <span>نوع الأوردر *</span>
+              <span className="text-[11px] text-slate-400 font-normal">ينعكس فورياً عند المندوب</span>
+            </label>
+            <div className="grid grid-cols-5 gap-1.5 p-1 bg-slate-100 rounded-xl text-xs">
+              {(['عادي', 'مستعجل', 'روشتة', 'أدوية ثلاجة', 'مستلزمات'] as OrderType[]).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setOrderType(type)}
+                  className={`py-2 px-1 text-center font-bold rounded-lg transition text-[11px] ${
+                    orderType === type
+                      ? type === 'مستعجل'
+                        ? 'bg-red-600 text-white shadow-xs'
+                        : type === 'أدوية ثلاجة'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : type === 'روشتة'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 bg-white/60'
+                  }`}
+                >
+                  {type === 'عادي' && '🟢 عادي'}
+                  {type === 'مستعجل' && '⚡ مستعجل'}
+                  {type === 'روشتة' && '📝 روشتة'}
+                  {type === 'أدوية ثلاجة' && '❄️ ثلاجة'}
+                  {type === 'مستلزمات' && '🩹 مستلزمات'}
                 </button>
               ))}
             </div>

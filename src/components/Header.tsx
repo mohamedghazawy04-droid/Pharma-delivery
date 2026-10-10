@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   UserCheck,
   Bike,
@@ -45,6 +45,7 @@ export const Header: React.FC<Props> = ({
   onOpenGoogleDrive,
   activeAlertCount,
 }) => {
+  const [copiedLink, setCopiedLink] = useState(false);
   const activePharmacy = pharmacies.find((p) => p.id === activePharmacyId) || pharmacies[0];
 
   const handleTestSoundAndPermission = () => {
@@ -94,52 +95,72 @@ export const Header: React.FC<Props> = ({
             )}
           </div>
 
-          {/* Zone 2: Navigation Links / Segmented Role Switcher */}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center p-1 bg-slate-100 rounded-xl">
-              <button
-                onClick={() => onRoleChange('pharmacist')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                  currentRole === 'pharmacist'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>الصيدلي</span>
-              </button>
+            {/* Zone 2: Navigation Links / Clear Role Separation */}
+            <div className="flex items-center gap-2">
+              {currentRole === 'pharmacist' ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-xl text-xs font-black">
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>لوحة تحكم الصيدلي</span>
+                  </div>
 
-              <button
-                onClick={() => onRoleChange('courier')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                  currentRole === 'courier'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Bike className="w-3.5 h-3.5 text-indigo-600" />
-                <span>المندوب</span>
-              </button>
+                  {/* Share Courier Link Button */}
+                  <button
+                    onClick={() => {
+                      const courierUrl = `${window.location.origin}${window.location.pathname}?role=courier`;
+                      navigator.clipboard.writeText(courierUrl);
+                      setCopiedLink(true);
+                      setTimeout(() => setCopiedLink(false), 3000);
+                    }}
+                    title="انسخ رابط صفحة المندوب لإرساله له على هاتفه الشخصي"
+                    className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-xl text-xs font-bold transition shadow-2xs ${
+                      copiedLink
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200'
+                    }`}
+                  >
+                    <Bike className="w-3.5 h-3.5" />
+                    <span>
+                      {copiedLink ? 'تم نسخ رابط المندوب بنجاح! ✔️' : '📱 رابط صفحة المندوب (مشاركة)'}
+                    </span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-900 border border-indigo-200 rounded-xl text-xs font-black">
+                    <Bike className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>صفحة المندوب الشخصية</span>
+                  </div>
+
+                  {/* Back to Pharmacist Button if pharmacist is supervising */}
+                  <button
+                    onClick={() => onRoleChange('pharmacist')}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>العودة للوحة الصيدلي</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Courier selector when in courier view */}
+              {currentRole === 'courier' && couriers.length > 1 && (
+                <div className="hidden sm:flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-1 rounded-xl">
+                  <span className="text-[11px] text-slate-500 font-medium">المندوب:</span>
+                  <select
+                    value={currentCourierId}
+                    onChange={(e) => onCourierSelect(e.target.value)}
+                    className="bg-transparent text-xs font-bold text-slate-800 outline-hidden cursor-pointer"
+                  >
+                    {couriers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.vehicleType})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
-
-            {/* Courier selector when in courier view */}
-            {currentRole === 'courier' && couriers.length > 0 && (
-              <div className="hidden sm:flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-1 rounded-xl">
-                <span className="text-[11px] text-slate-500 font-medium">المندوب:</span>
-                <select
-                  value={currentCourierId}
-                  onChange={(e) => onCourierSelect(e.target.value)}
-                  className="bg-transparent text-xs font-bold text-slate-800 outline-hidden cursor-pointer"
-                >
-                  {couriers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.vehicleType})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
 
           {/* Zone 3: Primary Actions */}
           <div className="flex items-center gap-2 shrink-0">

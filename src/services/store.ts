@@ -81,7 +81,7 @@ function loadInitialState(): AppState {
           (p: Pharmacy) =>
             p &&
             p.id !== 'pharma-branch-2' &&
-            p.name !== 'صيدلية النور والشفاء (فرع 2)'
+            !p.name.includes('النور والشفاء')
         );
 
         const finalPharmacies =
@@ -94,16 +94,31 @@ function loadInitialState(): AppState {
           ? parsed.activePharmacyId
           : finalPharmacies[0].id;
 
+        const isCourierUrl =
+          typeof window !== 'undefined' &&
+          (new URLSearchParams(window.location.search).get('role') === 'courier' ||
+            new URLSearchParams(window.location.search).get('mode') === 'courier');
+
+        const savedCourierAuthId = typeof localStorage !== 'undefined' ? localStorage.getItem('pharma_courier_auth_id') : null;
+        const savedPharmaAuth = typeof localStorage !== 'undefined' ? localStorage.getItem('pharma_admin_authenticated') === 'true' : false;
+
+        const finalCourierAuthId = parsed.authenticatedCourierId || savedCourierAuthId || null;
+        const isPharmaAuth = parsed.authenticatedAsPharmacist || savedPharmaAuth;
+
+        // If URL explicitly targets courier, role is courier.
+        // Otherwise, the default control dashboard is pharmacist.
+        const finalRole: UserRole = isCourierUrl ? 'courier' : 'pharmacist';
+
         return {
-          role: parsed.role || 'pharmacist',
+          role: finalRole,
           activePharmacyId: finalActiveId,
-          currentCourierId: parsed.currentCourierId || '',
+          currentCourierId: finalCourierAuthId || parsed.currentCourierId || '',
           pharmacies: finalPharmacies,
           couriers: parsed.couriers || [], // Real data only
           orders: parsed.orders || [], // Real data only
           shiftSummaries: parsed.shiftSummaries || [],
-          authenticatedAsPharmacist: parsed.authenticatedAsPharmacist || false,
-          authenticatedCourierId: parsed.authenticatedCourierId || null,
+          authenticatedAsPharmacist: isPharmaAuth,
+          authenticatedCourierId: isCourierUrl ? finalCourierAuthId : null,
         };
       }
     }
@@ -111,17 +126,25 @@ function loadInitialState(): AppState {
     console.warn('Failed to parse state from localStorage:', e);
   }
 
+  const isCourierUrl =
+    typeof window !== 'undefined' &&
+    (new URLSearchParams(window.location.search).get('role') === 'courier' ||
+      new URLSearchParams(window.location.search).get('mode') === 'courier');
+
+  const savedCourierAuthId = typeof localStorage !== 'undefined' ? localStorage.getItem('pharma_courier_auth_id') : null;
+  const savedPharmaAuth = typeof localStorage !== 'undefined' ? localStorage.getItem('pharma_admin_authenticated') === 'true' : false;
+
   // Pure clean state with only real pharmacy صيدليه الديب, NO fake pharmacies, NO fake orders and NO fake couriers
   return {
-    role: 'pharmacist',
+    role: isCourierUrl ? 'courier' : 'pharmacist',
     activePharmacyId: DEFAULT_INITIAL_PHARMACIES[0].id,
-    currentCourierId: '',
+    currentCourierId: savedCourierAuthId || '',
     pharmacies: DEFAULT_INITIAL_PHARMACIES,
     couriers: [], // Empty, no fake couriers!
     orders: [], // Empty, no fake orders!
     shiftSummaries: [],
-    authenticatedAsPharmacist: false,
-    authenticatedCourierId: null,
+    authenticatedAsPharmacist: savedPharmaAuth,
+    authenticatedCourierId: isCourierUrl ? savedCourierAuthId : null,
   };
 }
 
@@ -235,7 +258,12 @@ class Store {
               Array.isArray(cloudData.pharmacies) &&
               cloudData.pharmacies.length > 0
             ) {
-              const incomingPharmacies: Pharmacy[] = cloudData.pharmacies;
+              const rawPharmacies: Pharmacy[] = cloudData.pharmacies;
+              const cleanPharmacies = rawPharmacies.filter(
+                (p) => p && p.id !== 'pharma-branch-2' && !p.name.includes('النور والشفاء')
+              );
+              const incomingPharmacies: Pharmacy[] =
+                cleanPharmacies.length > 0 ? cleanPharmacies : DEFAULT_INITIAL_PHARMACIES;
               const activeStillExists = incomingPharmacies.some(
                 (p) => p.id === this.state.activePharmacyId
               );
@@ -341,7 +369,16 @@ class Store {
               this.handleIncomingCouriers(event.data.state.couriers);
             }
 
-            this.state = event.data.state;
+            // CRITICAL: Merge ONLY shared business data (couriers, orders, pharmacies, shifts)
+            // DO NOT overwrite this window/device's local session role or auth!
+            const incomingState = event.data.state;
+            this.state = {
+              ...this.state,
+              pharmacies: incomingState.pharmacies ? mergeById(this.state.pharmacies, incomingState.pharmacies) : this.state.pharmacies,
+              couriers: incomingState.couriers ? mergeById(this.state.couriers, incomingState.couriers) : this.state.couriers,
+              orders: incomingState.orders ? mergeById(this.state.orders, incomingState.orders) : this.state.orders,
+              shiftSummaries: incomingState.shiftSummaries ? mergeById(this.state.shiftSummaries, incomingState.shiftSummaries) : this.state.shiftSummaries,
+            };
             this.notify(false, false);
           } else if (event.data && event.data.type === 'ORDER_DELIVERED') {
             notificationService.notifyOrderDelivered({
@@ -373,9 +410,14 @@ class Store {
         const json = await res.json();
         if (json.success && json.data) {
           const cloudData = json.data;
-          const serverPharmacies: Pharmacy[] = Array.isArray(cloudData.pharmacies)
+          const rawServerPharmacies: Pharmacy[] = Array.isArray(cloudData.pharmacies)
             ? cloudData.pharmacies
             : [];
+          const cleanPharmacies = rawServerPharmacies.filter(
+            (p) => p && p.id !== 'pharma-branch-2' && !p.name.includes('النور والشفاء')
+          );
+          const serverPharmacies: Pharmacy[] =
+            cleanPharmacies.length > 0 ? cleanPharmacies : DEFAULT_INITIAL_PHARMACIES;
 
           if (serverPharmacies.length > 0) {
             const activeStillExists = serverPharmacies.some(
@@ -416,7 +458,9 @@ class Store {
               couriers: Array.isArray(cloudData.couriers)
                 ? mergeById(this.state.couriers, cloudData.couriers)
                 : this.state.couriers,
-              orders: Array.isArray(cloudData.orders) ? cloudData.orders : this.state.orders,
+              orders: Array.isArray(cloudData.orders)
+                ? mergeById(this.state.orders, cloudData.orders)
+                : this.state.orders,
               shiftSummaries: Array.isArray(cloudData.shiftSummaries)
                 ? cloudData.shiftSummaries
                 : this.state.shiftSummaries,
@@ -667,6 +711,10 @@ class Store {
   // Pharmacist Authentication
   public loginPharmacist(password: string): { success: boolean; error?: string } {
     if (password === 'pharmacist123') {
+      try {
+        localStorage.setItem('pharma_admin_authenticated', 'true');
+      } catch (e) {}
+
       this.state = {
         ...this.state,
         role: 'pharmacist',
@@ -685,6 +733,10 @@ class Store {
     );
 
     if (courier) {
+      try {
+        localStorage.setItem('pharma_courier_auth_id', courier.id);
+      } catch (e) {}
+
       this.state = {
         ...this.state,
         role: 'courier',
@@ -719,6 +771,10 @@ class Store {
 
   // Logout method (العودة لواجهة تسجيل الدخول الرئيسية)
   public logout() {
+    try {
+      localStorage.removeItem('pharma_courier_auth_id');
+      localStorage.removeItem('pharma_admin_authenticated');
+    } catch (e) {}
     this.state = {
       ...this.state,
       authenticatedAsPharmacist: false,
@@ -773,6 +829,7 @@ class Store {
   public addFastOrder(data: {
     pharmacyId?: string;
     orderValue: number; // Required value
+    orderType?: import('../types').OrderType;
     paymentMethod: 'cash' | 'visa' | 'instapay';
     courierId: string;
     deliveryFee?: number;
@@ -796,6 +853,7 @@ class Store {
       id: `ord-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       pharmacyId: targetPharmacyId,
       orderNumber,
+      orderType: data.orderType || 'عادي',
       orderValue: Number(data.orderValue),
       deliveryFee: Number(assignedFee),
       paymentMethod: data.paymentMethod,
@@ -817,12 +875,13 @@ class Store {
     return newOrder;
   }
 
-  // Edit existing order by Pharmacist (نقدي أو فيزا أو انستاباي / القيمة / المندوب)
+  // Edit existing order by Pharmacist (نوع الأوردر / القيمة / نقدي أو فيزا أو انستاباي / المندوب)
   // Changes reflect INSTANTLY on courier's screen via reactive state & BroadcastChannel
   public updateOrder(
     orderId: string,
     updates: {
       orderValue?: number;
+      orderType?: import('../types').OrderType;
       paymentMethod?: 'cash' | 'visa' | 'instapay';
       courierId?: string;
       deliveryFee?: number;
@@ -841,13 +900,20 @@ class Store {
         ? Number(updates.deliveryFee)
         : oldCourierId !== newCourierId && targetCourier
         ? targetCourier.deliveryFeePerOrder
-        : existingOrder.deliveryFee;
+        : existingOrder.deliveryFee || 7;
 
     const updatedOrders = this.state.orders.map((ord) => {
       if (ord.id === orderId) {
+        const newOrderVal =
+          updates.orderValue !== undefined ? Number(updates.orderValue) : ord.orderValue;
+        const newOrderType = updates.orderType !== undefined ? updates.orderType : ord.orderType || 'عادي';
+        const isDelivered = ord.status === 'delivered';
+
         return {
           ...ord,
-          orderValue: updates.orderValue !== undefined ? Number(updates.orderValue) : ord.orderValue,
+          orderValue: newOrderVal,
+          orderType: newOrderType,
+          totalValueWithDelivery: isDelivered ? newOrderVal + 7 : undefined,
           paymentMethod: updates.paymentMethod || ord.paymentMethod,
           courierId: newCourierId,
           deliveryFee,
@@ -879,7 +945,7 @@ class Store {
           return {
             ...ord,
             courierId: targetCourierId,
-            deliveryFee: targetCourier.deliveryFeePerOrder,
+            deliveryFee: targetCourier.deliveryFeePerOrder || 7,
             assignedAt: new Date().toISOString(),
             status: 'assigned',
             updatedAt: new Date().toISOString(),
@@ -891,22 +957,32 @@ class Store {
     this.notify(true);
   }
 
-  // Update order status
+  // Update order status (في حالة تمام الأوردر تضاف قيمة 7 جنيه للأوردر ولحصالة المندوب)
   public updateOrderStatus(orderId: string, status: Order['status']) {
     const order = this.state.orders.find((o) => o.id === orderId);
     if (!order) return;
 
     const isDeliveredNow = status === 'delivered' && order.status !== 'delivered';
     const deliveredAt = isDeliveredNow ? new Date().toISOString() : order.deliveredAt;
+    const completedFeeToAdd = 7; // قيمة 7 جنيه تضاف للأوردر عند التمام
 
     let updatedCouriers = this.state.couriers;
     if (isDeliveredNow) {
       const courier = this.state.couriers.find((c) => c.id === order.courierId);
       const pharmacy = this.state.pharmacies.find((p) => p.id === order.pharmacyId);
 
+      const deliveredOrderPayload: Order = {
+        ...order,
+        status: 'delivered',
+        deliveredAt,
+        completedFeeAdded: completedFeeToAdd,
+        deliveryFee: completedFeeToAdd,
+        totalValueWithDelivery: order.orderValue + completedFeeToAdd,
+      };
+
       // Trigger Web Notification for the Pharmacist
       notificationService.notifyOrderDelivered({
-        order: { ...order, status: 'delivered', deliveredAt },
+        order: deliveredOrderPayload,
         courier,
         pharmacy,
       });
@@ -915,7 +991,7 @@ class Store {
       if (this.syncChannel) {
         this.syncChannel.postMessage({
           type: 'ORDER_DELIVERED',
-          order: { ...order, status: 'delivered', deliveredAt },
+          order: deliveredOrderPayload,
           courier,
           pharmacy,
         });
@@ -932,7 +1008,8 @@ class Store {
             shift: {
               ...c.shift,
               totalOrdersDelivered: c.shift.totalOrdersDelivered + 1,
-              totalDeliveryEarnings: c.shift.totalDeliveryEarnings + order.deliveryFee,
+              // تضاف 7 جنيه لحصالة وأرباح المندوب عند تمام الأوردر
+              totalDeliveryEarnings: c.shift.totalDeliveryEarnings + completedFeeToAdd,
               totalCollectedCash: isCash
                 ? c.shift.totalCollectedCash + order.orderValue
                 : c.shift.totalCollectedCash,
@@ -952,9 +1029,22 @@ class Store {
     this.state = {
       ...this.state,
       couriers: updatedCouriers,
-      orders: this.state.orders.map((o) =>
-        o.id === orderId ? { ...o, status, deliveredAt } : o
-      ),
+      orders: this.state.orders.map((o) => {
+        if (o.id === orderId) {
+          if (status === 'delivered') {
+            return {
+              ...o,
+              status,
+              deliveredAt,
+              completedFeeAdded: completedFeeToAdd,
+              deliveryFee: completedFeeToAdd,
+              totalValueWithDelivery: o.orderValue + completedFeeToAdd,
+            };
+          }
+          return { ...o, status, deliveredAt };
+        }
+        return o;
+      }),
     };
     this.notify(true);
   }
@@ -1109,24 +1199,28 @@ class Store {
     this.notify(true);
   }
 
-  // REAL STOPPAGE INACTIVITY TICKER (الانذار حقيقي)
+  // REAL STOPPAGE & OFFLINE DISCONNECT INACTIVITY TICKER (الانذار الحقيقي للتوقف وانقطاع الإنترنت)
   private startRealStoppageTicker() {
     if (this.tickerInterval) return;
     this.tickerInterval = window.setInterval(() => {
       let stateChanged = false;
       let hasActiveUnacknowledgedAlert = false;
+      const now = Date.now();
 
       const updatedCouriers = this.state.couriers.map((courier) => {
         if (!courier.isOnDuty || courier.shift.isEnded) return courier;
 
+        let courierModified = false;
+        let newCourier = { ...courier };
+
+        // 1. Stationary Stoppage Check (توقف الحركة لأكثر من 5 دقائق)
         if (courier.currentLocation.isStationary) {
           const newStationary = courier.currentLocation.stationarySeconds + 1;
-          const shouldAlert = newStationary >= 300; // 5 minutes (300 seconds)
-          const alertNowActive = shouldAlert && !courier.stoppageAlertAcknowledged;
+          const shouldAlertStoppage = newStationary >= 300; // 5 minutes
+          const alertNowActive = shouldAlertStoppage && !courier.stoppageAlertAcknowledged;
 
           if (alertNowActive) {
             hasActiveUnacknowledgedAlert = true;
-            // Send real browser notification on the threshold
             if (newStationary === 300) {
               sendRealBrowserNotification(
                 '⚠️ إنذار توقف مندوب متواصل (5 دقائق)',
@@ -1139,17 +1233,57 @@ class Store {
             newStationary !== courier.currentLocation.stationarySeconds ||
             courier.isStoppageAlertActive !== alertNowActive
           ) {
-            stateChanged = true;
-            return {
-              ...courier,
+            courierModified = true;
+            newCourier = {
+              ...newCourier,
               currentLocation: {
-                ...courier.currentLocation,
+                ...newCourier.currentLocation,
                 stationarySeconds: newStationary,
               },
               isStoppageAlertActive: alertNowActive,
             };
           }
         }
+
+        // 2. Internet Disconnect & Heartbeat Check (إنذار انقطاع الإنترنت لأكثر من 5 دقائق أو 10 دقائق)
+        const lastPing =
+          courier.lastSeenTimestamp ||
+          courier.currentLocation.lastMovedTimestamp ||
+          Date.parse(courier.createdAt) ||
+          now;
+        const secondsSincePing = Math.max(0, Math.floor((now - lastPing) / 1000));
+        const isOfflineDetected =
+          courier.isInternetOnline === false || secondsSincePing >= 300; // 5 دقائق
+
+        if (isOfflineDetected) {
+          hasActiveUnacknowledgedAlert = true;
+          // Notify pharmacist when reaching 5 minutes (300s) or 10 minutes (600s)
+          if (secondsSincePing === 300 || secondsSincePing === 600) {
+            const minutesOff = Math.floor(secondsSincePing / 60);
+            sendRealBrowserNotification(
+              `⚠️ إنذار: انقطاع الإنترنت عن المندوب (${minutesOff} دقائق)`,
+              `الكابتن ${courier.name} غير متصل بالإنترنت منذ ${minutesOff} دقائق! الهاتف لا يستجيب للـ GPS.`
+            );
+          }
+        }
+
+        if (
+          courier.isOfflineAlertActive !== isOfflineDetected ||
+          courier.offlineSeconds !== secondsSincePing
+        ) {
+          courierModified = true;
+          newCourier = {
+            ...newCourier,
+            isOfflineAlertActive: isOfflineDetected,
+            offlineSeconds: secondsSincePing,
+          };
+        }
+
+        if (courierModified) {
+          stateChanged = true;
+          return newCourier;
+        }
+
         return courier;
       });
 
@@ -1169,7 +1303,57 @@ class Store {
     }, 1000);
   }
 
-  // Simulate or set stoppage time (for testing the real alarm)
+  // Periodic courier heartbeat from active mobile
+  public sendCourierHeartbeat(courierId: string, isOnline = true) {
+    const now = Date.now();
+    this.state = {
+      ...this.state,
+      couriers: this.state.couriers.map((c) => {
+        if (c.id === courierId) {
+          return {
+            ...c,
+            lastSeenTimestamp: now,
+            isInternetOnline: isOnline,
+            isOfflineAlertActive: isOnline ? false : c.isOfflineAlertActive,
+            offlineSeconds: isOnline ? 0 : c.offlineSeconds,
+          };
+        }
+        return c;
+      }),
+    };
+    this.notify(true);
+
+    // Sync to server and Firestore
+    fetch('/api/courier/heartbeat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        courierId,
+        isInternetOnline: isOnline,
+        lastSeenTimestamp: now,
+      }),
+    }).catch(() => {});
+
+    if (typeof window !== 'undefined' && db) {
+      setDoc(
+        doc(db, 'couriers', courierId),
+        {
+          lastSeenTimestamp: now,
+          isInternetOnline: isOnline,
+          isOfflineAlertActive: isOnline ? false : undefined,
+          offlineSeconds: isOnline ? 0 : undefined,
+        },
+        { merge: true }
+      ).catch(() => {});
+    }
+  }
+
+  // Set Internet connection online/offline status directly
+  public setCourierInternetStatus(courierId: string, isOnline: boolean) {
+    this.sendCourierHeartbeat(courierId, isOnline);
+  }
+
+  // Simulate stoppage time (for testing the real alarm)
   public simulateStoppage(courierId: string, seconds = 301) {
     this.state = {
       ...this.state,
@@ -1200,6 +1384,32 @@ class Store {
     this.notify(true);
   }
 
+  // Simulate offline internet disconnection (for testing the offline alarm)
+  public simulateOffline(courierId: string, minutes = 5) {
+    const fakeLastSeen = Date.now() - minutes * 60 * 1000 - 5000;
+    this.state = {
+      ...this.state,
+      couriers: this.state.couriers.map((c) => {
+        if (c.id === courierId) {
+          return {
+            ...c,
+            lastSeenTimestamp: fakeLastSeen,
+            isInternetOnline: false,
+            isOfflineAlertActive: true,
+            offlineSeconds: minutes * 60 + 5,
+          };
+        }
+        return c;
+      }),
+    };
+    startRepeatingAlarm();
+    sendRealBrowserNotification(
+      `⚠️ إنذار: انقطاع الإنترنت عن المندوب (${minutes} دقائق)`,
+      `تم رصد انقطاع الاتصال بالإنترنت منذ ${minutes} دقائق!`
+    );
+    this.notify(true);
+  }
+
   public acknowledgeStoppageAlert(courierId: string) {
     this.state = {
       ...this.state,
@@ -1209,6 +1419,23 @@ class Store {
             ...c,
             isStoppageAlertActive: false,
             stoppageAlertAcknowledged: true,
+          };
+        }
+        return c;
+      }),
+    };
+    stopRepeatingAlarm();
+    this.notify(true);
+  }
+
+  public acknowledgeOfflineAlert(courierId: string) {
+    this.state = {
+      ...this.state,
+      couriers: this.state.couriers.map((c) => {
+        if (c.id === courierId) {
+          return {
+            ...c,
+            isOfflineAlertActive: false,
           };
         }
         return c;
@@ -1262,6 +1489,7 @@ class Store {
     altitude?: number | null,
     address?: string
   ) {
+    const now = Date.now();
     this.state = {
       ...this.state,
       couriers: this.state.couriers.map((c) => {
@@ -1269,7 +1497,6 @@ class Store {
           const prevLat = c.currentLocation.lat;
           const prevLng = c.currentLocation.lng;
           const distanceMeters = calculateDistanceMeters(prevLat, prevLng, lat, lng);
-          const now = Date.now();
           const timeDeltaSec = Math.max(
             1,
             (now - (c.currentLocation.lastMovedTimestamp || now)) / 1000
@@ -1290,6 +1517,10 @@ class Store {
 
           return {
             ...c,
+            lastSeenTimestamp: now,
+            isInternetOnline: true,
+            isOfflineAlertActive: false,
+            offlineSeconds: 0,
             currentLocation: {
               ...c.currentLocation,
               lat,
@@ -1314,6 +1545,35 @@ class Store {
       }),
     };
     this.notify(true);
+
+    // Direct instantaneous cloud synchronization for real 100% live tracking
+    const updatedCourier = this.state.couriers.find((c) => c.id === courierId);
+    if (updatedCourier) {
+      fetch('/api/courier/location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          courierId,
+          location: updatedCourier.currentLocation,
+          lastSeenTimestamp: now,
+          isInternetOnline: true,
+        }),
+      }).catch((e) => console.warn('GPS location push error:', e));
+
+      if (typeof window !== 'undefined' && db) {
+        setDoc(
+          doc(db, 'couriers', courierId),
+          {
+            currentLocation: updatedCourier.currentLocation,
+            lastSeenTimestamp: now,
+            isInternetOnline: true,
+            isOfflineAlertActive: false,
+            offlineSeconds: 0,
+          },
+          { merge: true }
+        ).catch((e) => console.warn('Firestore GPS update error:', e));
+      }
+    }
   }
 
   // Register real Courier with Password and Pharmacy association
@@ -1368,12 +1628,20 @@ class Store {
     this.knownCourierIds.add(newCourier.id);
 
     // 2. Immediate local state update
+    const isPharma = this.state.authenticatedAsPharmacist;
+    if (!isPharma) {
+      try {
+        localStorage.setItem('pharma_courier_auth_id', newCourier.id);
+      } catch (e) {}
+    }
+
     this.state = {
       ...this.state,
       couriers: mergeById(this.state.couriers, [newCourier]),
       currentCourierId: newCourier.id,
-      role: 'courier',
-      authenticatedCourierId: newCourier.id,
+      role: isPharma ? 'pharmacist' : 'courier',
+      authenticatedAsPharmacist: isPharma,
+      authenticatedCourierId: isPharma ? this.state.authenticatedCourierId : newCourier.id,
       activePharmacyId: pharmacy.id,
     };
     this.notify(true);

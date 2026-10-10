@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Edit3, DollarSign, Bike, Check, CreditCard, Banknote, Send, Sparkles, AlertTriangle } from 'lucide-react';
-import { CourierProfile, Order, PaymentMethod } from '../types';
+import { X, Edit3, DollarSign, Bike, Check, CreditCard, Banknote, Send, AlertTriangle } from 'lucide-react';
+import { CourierProfile, Order, PaymentMethod, OrderType } from '../types';
 import { store } from '../services/store';
 
 interface Props {
@@ -17,6 +17,7 @@ export const EditOrderModal: React.FC<Props> = ({
   couriers,
 }) => {
   const [orderValue, setOrderValue] = useState<number | string>('');
+  const [orderType, setOrderType] = useState<OrderType>('عادي');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [courierId, setCourierId] = useState('');
   const [deliveryFee, setDeliveryFee] = useState<number>(7);
@@ -26,9 +27,10 @@ export const EditOrderModal: React.FC<Props> = ({
   useEffect(() => {
     if (order) {
       setOrderValue(order.orderValue);
+      setOrderType(order.orderType || 'عادي');
       setPaymentMethod(order.paymentMethod);
       setCourierId(order.courierId);
-      setDeliveryFee(order.deliveryFee);
+      setDeliveryFee(order.deliveryFee || 7);
       setQuickNote(order.quickNote || '');
       setFormError('');
     }
@@ -46,6 +48,7 @@ export const EditOrderModal: React.FC<Props> = ({
 
     store.updateOrder(order.id, {
       orderValue: numVal,
+      orderType,
       paymentMethod,
       courierId,
       deliveryFee: Number(deliveryFee),
@@ -90,6 +93,40 @@ export const EditOrderModal: React.FC<Props> = ({
               <span>{formError}</span>
             </div>
           )}
+
+          {/* Order Type (نوع الأوردر) */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+              <span>نوع الأوردر *</span>
+              <span className="text-[11px] text-amber-700 font-bold">تغيير لحظي عند المندوب</span>
+            </label>
+            <div className="grid grid-cols-5 gap-1.5 p-1 bg-slate-100 rounded-xl text-xs">
+              {(['عادي', 'مستعجل', 'روشتة', 'أدوية ثلاجة', 'مستلزمات'] as OrderType[]).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setOrderType(type)}
+                  className={`py-2 px-1 text-center font-bold rounded-lg transition text-[11px] ${
+                    orderType === type
+                      ? type === 'مستعجل'
+                        ? 'bg-red-600 text-white shadow-xs'
+                        : type === 'أدوية ثلاجة'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : type === 'روشتة'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 bg-white/60'
+                  }`}
+                >
+                  {type === 'عادي' && '🟢 عادي'}
+                  {type === 'مستعجل' && '⚡ مستعجل'}
+                  {type === 'روشتة' && '📝 روشتة'}
+                  {type === 'أدوية ثلاجة' && '❄️ ثلاجة'}
+                  {type === 'مستلزمات' && '🩹 مستلزمات'}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Order Value */}
           <div>

@@ -221,7 +221,7 @@ class NotificationService {
   /**
    * Test Web Notification for the Pharmacist
    */
-  public async testNotification(pharmacyName = 'صيدلية النور والشفاء') {
+  public async testNotification(pharmacyName = 'صيدليه الديب') {
     if (this.isSupported() && Notification.permission === 'default') {
       await this.requestPermission();
     }
