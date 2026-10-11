@@ -4,20 +4,160 @@
       "id": "pharma-main",
       "name": "صيدليه الديب",
       "pharmacistName": "د.محمد",
-      "phone": "01063629587",
-      "address": "الحي ١١ الاتحاد التعاوني",
+      "phone": "01000321253",
+      "address": "الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب",
       "password": "pharmacist123",
       "globalDeliveryFee": 7,
       "coordinates": {
-        "lat": 30.05688,
-        "lng": 31.20572,
-        "address": "الحي ١١ الاتحاد التعاوني"
+        "lat": 29.97056,
+        "lng": 30.89801,
+        "address": "الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب"
       },
       "createdAt": "2026-10-06T00:00:00.000Z"
     }
   ],
-  "couriers": [],
-  "orders": [],
+  "couriers": [
+    {
+      "id": "courier-01000321253",
+      "name": "كابتن التوصيل",
+      "phone": "01000321253",
+      "password": "123",
+      "vehicleType": "موتوسيكل",
+      "vehicleNumber": "٧٨٩٥",
+      "pharmacyId": "pharma-main",
+      "deliveryFeePerOrder": 7,
+      "nationalId": "",
+      "isOnDuty": true,
+      "currentLocation": {
+        "lat": 29.97056,
+        "lng": 30.89801,
+        "address": "الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب",
+        "speedKmH": 0,
+        "lastMovedTimestamp": 1791738500000,
+        "isStationary": true,
+        "stationarySeconds": 0,
+        "accuracy": 15,
+        "isGpsLive": true
+      },
+      "shift": {
+        "startTime": "2026-10-11T16:00:00.000Z",
+        "isEnded": false,
+        "totalOrdersDelivered": 0,
+        "totalDeliveryEarnings": 0,
+        "totalCollectedCash": 0,
+        "totalCollectedVisa": 0,
+        "totalCollectedInstapay": 0
+      },
+      "isStoppageAlertActive": false,
+      "stoppageAlertAcknowledged": false,
+      "createdAt": "2026-10-11T16:00:00.000Z",
+      "isInternetOnline": true,
+      "offlineSeconds": 0,
+      "lastSeenTimestamp": 1791738500000
+    },
+    {
+      "id": "courier-1791556934998-961",
+      "name": "مصطفي",
+      "phone": "01061395938",
+      "password": "123456",
+      "vehicleType": "موتوسيكل",
+      "vehicleNumber": "٢٣١٦",
+      "pharmacyId": "pharma-main",
+      "deliveryFeePerOrder": 7,
+      "nationalId": "",
+      "isOnDuty": true,
+      "currentLocation": {
+        "isGpsLive": true,
+        "altitude": 180,
+        "isStationary": false,
+        "stationarySeconds": 0,
+        "lastMovedTimestamp": 1791735853372,
+        "heading": 196.4512481689453,
+        "lastGpsUpdate": "2026-10-11T16:24:13.372Z",
+        "accuracy": 35,
+        "lat": 29.9752109,
+        "lng": 30.9008298,
+        "speedKmH": 11,
+        "address": "الحى العاشر، الحى الحادى عشر، السادس من أكتوبر"
+      },
+      "shift": {
+        "isEnded": false,
+        "totalDeliveryEarnings": 0,
+        "totalCollectedInstapay": 0,
+        "totalOrdersDelivered": 0,
+        "totalCollectedVisa": 0,
+        "totalCollectedCash": 0,
+        "startTime": "2026-10-09T14:42:14.999Z"
+      },
+      "isStoppageAlertActive": false,
+      "stoppageAlertAcknowledged": false,
+      "createdAt": "2026-10-09T14:42:14.999Z",
+      "isOfflineAlertActive": false,
+      "offlineSeconds": 97,
+      "lastSeenTimestamp": 1791738360893,
+      "isInternetOnline": true
+    },
+    {
+      "id": "courier-1791633417172-723",
+      "name": "عبدالحميد",
+      "phone": "01156184930",
+      "password": "1511",
+      "vehicleType": "موتوسيكل",
+      "vehicleNumber": "بدون لوحة",
+      "pharmacyId": "pharma-main",
+      "deliveryFeePerOrder": 7,
+      "nationalId": "",
+      "isOnDuty": true,
+      "currentLocation": {
+        "address": "الحى العاشر، الحى الحادى عشر، السادس من أكتوبر",
+        "lat": 29.9752448,
+        "stationarySeconds": 94,
+        "isStationary": true,
+        "isGpsLive": true,
+        "speedKmH": 0,
+        "lastMovedTimestamp": 1791633657627,
+        "lng": 30.9007767,
+        "lastGpsUpdate": "2026-10-10T12:01:02.717Z",
+        "altitude": 180,
+        "accuracy": 11,
+        "heading": 25.606178283691406
+      },
+      "shift": {
+        "totalOrdersDelivered": 0,
+        "isEnded": false,
+        "startTime": "2026-10-10T11:56:57.172Z",
+        "totalCollectedCash": 0,
+        "totalCollectedVisa": 0,
+        "totalDeliveryEarnings": 0,
+        "totalCollectedInstapay": 0
+      },
+      "isStoppageAlertActive": false,
+      "stoppageAlertAcknowledged": false,
+      "createdAt": "2026-10-10T11:56:57.172Z",
+      "isOfflineAlertActive": false,
+      "offlineSeconds": 96,
+      "lastSeenTimestamp": 1791738361629,
+      "isInternetOnline": true
+    }
+  ],
+  "orders": [
+    {
+      "id": "ord-1791735583899-515",
+      "pharmacyId": "pharma-main",
+      "orderNumber": "#1",
+      "orderType": "عادي",
+      "orderValue": 500,
+      "deliveryFee": 7,
+      "paymentMethod": "instapay",
+      "courierId": "courier-01000321253",
+      "courierPhone": "01000321253",
+      "courierName": "كابتن التوصيل",
+      "status": "assigned",
+      "createdAt": "2026-10-11T16:19:43.899Z",
+      "assignedAt": "2026-10-11T16:19:43.899Z",
+      "isArchived": false
+    }
+  ],
   "shiftSummaries": [],
-  "lastUpdated": "2026-10-09T12:16:00.000Z"
+  "lastUpdated": "2026-10-11T17:15:00.000Z"
 }

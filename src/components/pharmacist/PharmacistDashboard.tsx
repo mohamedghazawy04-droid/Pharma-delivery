@@ -33,6 +33,8 @@ import {
   Trash2,
   WifiOff,
   Radio,
+  MessageCircle,
+  Crosshair,
 } from 'lucide-react';
 import {
   CourierProfile,
@@ -44,12 +46,12 @@ import {
 } from '../../types';
 import { store } from '../../services/store';
 import { notificationService, DeliveryAlertItem } from '../../services/notificationService';
-import { LiveMap } from '../LiveMap';
+import { LiveMap, getCourierPalette } from '../LiveMap';
 import { AddPharmacyModal } from './AddPharmacyModal';
 import { ManagePharmaciesModal } from './ManagePharmaciesModal';
 import { EditPharmacyModal } from './EditPharmacyModal';
 import { ShiftPdfModal } from './ShiftPdfModal';
-import { formatDurationSeconds } from '../../utils/geo';
+import { formatDurationSeconds, calculateDistanceKm, PHARMACY_BASE_LOCATION } from '../../utils/geo';
 
 interface Props {
   pharmacy: Pharmacy;
@@ -700,61 +702,67 @@ export const PharmacistDashboard: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Main Tabs Navigation */}
-      <div className="flex items-center gap-1 p-1 bg-slate-200/70 rounded-2xl max-w-xl text-xs font-bold">
+      {/* Main Tabs Navigation (متوافق مع شاشات الكمبيوتر والموبايل) */}
+      <div className="flex items-center gap-1.5 p-1.5 bg-slate-200/80 rounded-2xl max-w-3xl text-xs font-bold overflow-x-auto scrollbar-none shadow-2xs">
+        <button
+          onClick={() => setActiveTab('map')}
+          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
+            activeTab === 'map'
+              ? 'bg-emerald-600 text-white shadow-xs font-black ring-2 ring-emerald-500/30'
+              : 'text-slate-700 hover:text-slate-900 hover:bg-slate-300/40'
+          }`}
+          title="فتح شاشة التتبع المباشر وخريطة المناديب للكمبيوتر"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+          <span>🛰️ شاشة التتبع والخريطة ({pharmacyCouriers.length})</span>
+        </button>
+
         <button
           onClick={() => setActiveTab('couriers')}
-          className={`flex-1 py-2 px-3 rounded-xl transition ${
+          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
             activeTab === 'couriers'
-              ? 'bg-white text-slate-900 shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'bg-white text-slate-900 shadow-xs font-black'
+              : 'text-slate-700 hover:text-slate-900 hover:bg-slate-300/40'
           }`}
         >
-          مناديب الصيدلية ({pharmacyCouriers.length})
+          <Users className="w-3.5 h-3.5 text-indigo-600" />
+          <span>مناديب الصيدلية ({pharmacyCouriers.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('orders')}
-          className={`flex-1 py-2 px-3 rounded-xl transition ${
+          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
             activeTab === 'orders'
-              ? 'bg-white text-slate-900 shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'bg-white text-slate-900 shadow-xs font-black'
+              : 'text-slate-700 hover:text-slate-900 hover:bg-slate-300/40'
           }`}
         >
-          الأوردرات النشطة ({activeOrders.length})
+          <Package className="w-3.5 h-3.5 text-emerald-600" />
+          <span>الأوردرات النشطة ({activeOrders.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('archive')}
-          className={`flex-1 py-2 px-3 rounded-xl transition ${
+          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
             activeTab === 'archive'
-              ? 'bg-white text-slate-900 shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'bg-white text-slate-900 shadow-xs font-black'
+              : 'text-slate-700 hover:text-slate-900 hover:bg-slate-300/40'
           }`}
         >
-          الأرشيف السحابي ({archivedOrders.length})
+          <Archive className="w-3.5 h-3.5 text-slate-500" />
+          <span>الأرشيف ({archivedOrders.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('shifts')}
-          className={`flex-1 py-2 px-3 rounded-xl transition ${
+          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
             activeTab === 'shifts'
-              ? 'bg-white text-slate-900 shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'bg-white text-slate-900 shadow-xs font-black'
+              : 'text-slate-700 hover:text-slate-900 hover:bg-slate-300/40'
           }`}
         >
-          سجل الشفتات ({pharmacyShiftSummaries.length})
-        </button>
-
-        <button
-          onClick={() => setActiveTab('map')}
-          className={`flex-1 py-2 px-3 rounded-xl transition ${
-            activeTab === 'map'
-              ? 'bg-white text-slate-900 shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          الخريطة المباشرة
+          <History className="w-3.5 h-3.5 text-amber-600" />
+          <span>الشفتات ({pharmacyShiftSummaries.length})</span>
         </button>
       </div>
 
@@ -1106,6 +1114,19 @@ export const PharmacistDashboard: React.FC<Props> = ({
                       >
                         <Archive className="w-3.5 h-3.5" />
                         <span>حفظ وأرشفة أوردرات المندوب (تفريغ صفحته)</span>
+                      </button>
+
+                      {/* Action 1.4: Direct Live Map Tracking for this Courier */}
+                      <button
+                        onClick={() => {
+                          setSelectedCourierId(courier.id);
+                          setActiveTab('map');
+                        }}
+                        className="w-full py-2 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-2xs"
+                        title="الانتقال إلى شاشة التتبع الفوري لهذا المندوب على الخريطة"
+                      >
+                        <Crosshair className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>🎯 تتبع {courier.name} على الخريطة المباشرة</span>
                       </button>
 
                       {/* Action 1.5: Supervisor Direct Inspection of Courier Dashboard */}
@@ -1590,28 +1611,401 @@ export const PharmacistDashboard: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Tab 5: Live Map */}
+      {/* Tab 5: Dedicated Desktop Live Courier Tracking Station (شاشة التتبع المباشر المتكاملة للكمبيوتر) */}
       {activeTab === 'map' && (
         <div className="space-y-4">
-          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
-            <div className="flex items-center justify-between mb-4">
+          {/* Top Desktop Banner & Control Bar */}
+          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-4">
+            <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
               <div>
-                <h2 className="text-base font-extrabold text-slate-900">
-                  خريطة التتبع المباشر لمناديب {pharmacy.name}
-                </h2>
-                <p className="text-xs text-slate-500">
-                  تتبع مباشر لأماكن المناديب وحركتهم وإنذار التوقف 5 دقائق
-                </p>
+                <div className="flex items-center gap-2.5">
+                  <span className="p-2.5 bg-emerald-100 text-emerald-800 rounded-2xl text-xl font-bold shrink-0">
+                    🛰️
+                  </span>
+                  <div>
+                    <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                      <span>شاشة التتبع المباشر لمناديب {pharmacy.name}</span>
+                      <span className="text-xs bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                        <span>بث حي متواصل</span>
+                      </span>
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      متابعة حركة كل مندوب منفصلاً على شاشة التتبع مع إنذارات التوقف 5 دقائق وانقطاع الإنترنت
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pharmacy Location Detailed Badge */}
+              <div className="bg-emerald-50/90 border border-emerald-200/90 rounded-2xl p-3 px-4 text-xs text-emerald-950 flex items-center gap-3 max-w-xl shadow-2xs">
+                <span className="text-2xl shrink-0">🏥</span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 font-extrabold text-[13px] text-emerald-900">
+                    <span>صيدليه الديب - 6 أكتوبر</span>
+                    <span className="text-[10px] bg-emerald-200/80 text-emerald-950 px-2 py-0.5 rounded-full font-mono">
+                      {pharmacy.phone}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-emerald-800 font-bold mt-0.5">
+                    الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١
+                  </p>
+                </div>
               </div>
             </div>
 
-            <LiveMap
-              pharmacy={pharmacy}
-              couriers={pharmacyCouriers}
-              orders={pharmacyOrders}
-              selectedCourierId={selectedCourierId}
-              onSelectCourier={(id) => setSelectedCourierId(id)}
-            />
+            {/* Live Metrics Row & Quick Courier Filter Pills */}
+            <div className="pt-3 border-t border-slate-100 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+              {/* Courier Filter Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 scrollbar-none">
+                <span className="text-xs font-bold text-slate-600 shrink-0 ml-1">
+                  تحديد المندوب:
+                </span>
+                <button
+                  onClick={() => setSelectedCourierId('')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold shrink-0 transition flex items-center gap-1.5 ${
+                    !selectedCourierId
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>جميع المناديب ({pharmacyCouriers.length})</span>
+                </button>
+
+                {pharmacyCouriers.map((courier, idx) => {
+                  const palette = getCourierPalette(idx);
+                  const isSelected = selectedCourierId === courier.id;
+                  const isAlerting = courier.isStoppageAlertActive;
+                  const isOffline = Boolean(courier.isOfflineAlertActive || courier.isInternetOnline === false);
+                  const isMoving = courier.currentLocation.speedKmH > 0;
+
+                  const pharmaLat = pharmacy.coordinates?.lat || PHARMACY_BASE_LOCATION.lat;
+                  const pharmaLng = pharmacy.coordinates?.lng || PHARMACY_BASE_LOCATION.lng;
+                  const distKm = calculateDistanceKm(
+                    pharmaLat,
+                    pharmaLng,
+                    courier.currentLocation.lat,
+                    courier.currentLocation.lng
+                  );
+
+                  return (
+                    <button
+                      key={courier.id}
+                      onClick={() => setSelectedCourierId(courier.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition flex items-center gap-1.5 border ${
+                        isSelected
+                          ? 'text-white shadow-sm ring-2 ring-indigo-500'
+                          : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-200'
+                      }`}
+                      style={isSelected ? { backgroundColor: palette.bg, borderColor: palette.border } : {}}
+                    >
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{
+                          backgroundColor: isAlerting
+                            ? '#ef4444'
+                            : isOffline
+                            ? '#f97316'
+                            : isMoving
+                            ? '#10b981'
+                            : '#f59e0b',
+                        }}
+                      />
+                      <span>{courier.name}</span>
+                      <span className="text-[10px] opacity-80 font-mono">({distKm} كم)</span>
+                      {isAlerting && <span className="animate-bounce">🚨</span>}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Status Counters */}
+              <div className="flex items-center gap-2 text-xs font-bold shrink-0">
+                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-lg border border-emerald-100 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                  <span>نشط: {pharmacyCouriers.filter((c) => c.currentLocation.speedKmH > 0).length}</span>
+                </span>
+                <span className="px-2.5 py-1 bg-amber-50 text-amber-800 rounded-lg border border-amber-100">
+                  متوقف: {pharmacyCouriers.filter((c) => c.currentLocation.speedKmH === 0).length}
+                </span>
+                {pharmacyCouriers.some((c) => c.isStoppageAlertActive) && (
+                  <span className="px-2.5 py-1 bg-rose-50 text-rose-700 rounded-lg border border-rose-200 animate-pulse font-black">
+                    🚨 إنذار توقف نشط!
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Desktop Responsive Split Layout (متوافق تماماً مع الكمبيوتر العادي) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            {/* Column A: قائمة المناديب المنفصلة (Individual Courier Cards) - 5 cols on lg */}
+            <div className="lg:col-span-5 space-y-3 order-2 lg:order-1">
+              <div className="flex items-center justify-between px-1">
+                <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                  <Bike className="w-4 h-4 text-indigo-600" />
+                  <span>لوحة المناديب (كل مندوب منفصل)</span>
+                </h3>
+                <span className="text-xs text-slate-500 font-mono font-bold">
+                  {pharmacyCouriers.length} مندوب مسجل
+                </span>
+              </div>
+
+              {pharmacyCouriers.length === 0 ? (
+                <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 shadow-xs space-y-2">
+                  <Bike className="w-10 h-10 text-slate-300 mx-auto" />
+                  <p className="text-xs text-slate-500 font-bold">
+                    لا يوجد مناديب مسجلين في هذا الفرع حالياً
+                  </p>
+                  <button
+                    onClick={onOpenAuthModal}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition"
+                  >
+                    + تسجيل مندوب جديد
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[700px] overflow-y-auto pr-0.5 scrollbar-thin">
+                  {pharmacyCouriers.map((courier, idx) => {
+                    const palette = getCourierPalette(idx);
+                    const isSelected = selectedCourierId === courier.id;
+                    const isAlerting = courier.isStoppageAlertActive;
+                    const isOffline = Boolean(courier.isOfflineAlertActive || courier.isInternetOnline === false);
+                    const isStationary = courier.currentLocation.isStationary;
+                    const courierOrders = activeOrders.filter((o) => o.courierId === courier.id);
+
+                    const pharmaLat = pharmacy.coordinates?.lat || PHARMACY_BASE_LOCATION.lat;
+                    const pharmaLng = pharmacy.coordinates?.lng || PHARMACY_BASE_LOCATION.lng;
+                    const distKm = calculateDistanceKm(
+                      pharmaLat,
+                      pharmaLng,
+                      courier.currentLocation.lat,
+                      courier.currentLocation.lng
+                    );
+
+                    let vehicleEmoji = '🏍️';
+                    if (courier.vehicleType === 'سكوتر') vehicleEmoji = '🛵';
+                    if (courier.vehicleType === 'دراجة') vehicleEmoji = '🚲';
+                    if (courier.vehicleType === 'سيارة') vehicleEmoji = '🚗';
+
+                    return (
+                      <div
+                        key={courier.id}
+                        className={`bg-white rounded-3xl p-4 border transition-all ${
+                          isSelected
+                            ? 'border-indigo-600 ring-2 ring-indigo-500/30 shadow-md'
+                            : 'border-slate-200 hover:border-slate-300 shadow-2xs'
+                        }`}
+                        style={{ borderRightWidth: '6px', borderRightColor: palette.border }}
+                      >
+                        {/* Courier Header with Palette Color Indicator */}
+                        <div className="flex items-start justify-between gap-2 mb-2.5">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div
+                              className="w-10 h-10 rounded-2xl flex items-center justify-center text-lg text-white shadow-xs shrink-0"
+                              style={{ backgroundColor: palette.bg }}
+                            >
+                              {vehicleEmoji}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <h4 className="font-extrabold text-sm text-slate-900 truncate">
+                                  {courier.name}
+                                </h4>
+                                <span
+                                  className="text-[10px] font-bold px-1.5 py-0.2 rounded-md text-white font-mono"
+                                  style={{ backgroundColor: palette.bg }}
+                                >
+                                  مندوب #{idx + 1}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 font-mono truncate">
+                                {courier.phone} · {courier.vehicleType} ({courier.vehicleNumber})
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Live Status Badge */}
+                          <div className="shrink-0 text-left">
+                            {isAlerting ? (
+                              <span className="text-[10px] font-black bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                                🚨 متوقف (+5د)!
+                              </span>
+                            ) : isOffline ? (
+                              <span className="text-[10px] font-black bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                📶 نت مقطوع!
+                              </span>
+                            ) : !isStationary ? (
+                              <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                                🟢 {courier.currentLocation.speedKmH} كم/س
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                                🟡 متوقف ({formatDurationSeconds(courier.currentLocation.stationarySeconds)})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Location Details & Distance from El Deeb Pharmacy */}
+                        <div className="bg-slate-50 rounded-2xl p-2.5 mb-2.5 border border-slate-100 text-xs space-y-1">
+                          <div className="flex items-center justify-between text-slate-600">
+                            <span className="flex items-center gap-1 truncate text-[11px]">
+                              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span className="truncate">{courier.currentLocation.address}</span>
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-200/70 text-[11px]">
+                            <span className="text-emerald-800 font-extrabold flex items-center gap-1">
+                              <span>📏 المسافة من صيدلية الديب:</span>
+                              <span className="font-mono">{distKm} كم</span>
+                            </span>
+                            {courier.currentLocation.isGpsLive && (
+                              <span className="text-[10px] text-emerald-700 font-bold">
+                                📡 GPS دقيق
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Shift Piggy Bank & Active Orders */}
+                        <div className="grid grid-cols-2 gap-2 mb-2.5 text-xs">
+                          <div className="bg-amber-50/80 border border-amber-200/80 rounded-xl p-2 text-amber-900">
+                            <span className="text-[10px] text-amber-800 block">أرباح الحصالة (+7ج):</span>
+                            <strong className="text-sm font-mono font-black">
+                              {courier.shift.totalDeliveryEarnings} جنيه
+                            </strong>
+                            <div className="text-[10px] text-amber-700 mt-0.5">
+                              أنجز {courier.shift.totalOrdersDelivered} أوردر
+                            </div>
+                          </div>
+
+                          <div className="bg-indigo-50/80 border border-indigo-200/80 rounded-xl p-2 text-indigo-900">
+                            <span className="text-[10px] text-indigo-800 block">أوردرات جارية:</span>
+                            <strong className="text-sm font-mono font-black">
+                              {courierOrders.length} أوردر
+                            </strong>
+                            <div className="text-[10px] text-indigo-700 mt-0.5">
+                              كاش بالعهدة: {courier.shift.totalCollectedCash} ج
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Active Orders List Preview for this courier */}
+                        {courierOrders.length > 0 && (
+                          <div className="mb-2.5 bg-slate-50/80 rounded-xl p-2 border border-slate-100 text-xs">
+                            <div className="text-[10px] font-extrabold text-slate-500 mb-1">
+                              الأوردرات المكلف بها حالياً:
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {courierOrders.map((o) => (
+                                <span
+                                  key={o.id}
+                                  className="text-[10px] px-2 py-0.5 bg-white border border-slate-200 rounded-md font-bold text-slate-800 flex items-center gap-1 shadow-2xs"
+                                >
+                                  <span>📦 {o.orderNumber}</span>
+                                  <span className="text-emerald-700 font-mono">({o.orderValue} ج)</span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Courier Quick Action Buttons */}
+                        <div className="grid grid-cols-4 gap-1 pt-1 border-t border-slate-100">
+                          {/* 1. Focus on Map */}
+                          <button
+                            onClick={() => setSelectedCourierId(courier.id)}
+                            className="py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition"
+                            title="التركيز على هذا المندوب في الخريطة"
+                          >
+                            <Crosshair className="w-3.5 h-3.5" />
+                            <span>تتبع</span>
+                          </button>
+
+                          {/* 2. Direct Phone Call */}
+                          <a
+                            href={`tel:${courier.phone}`}
+                            className="py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition"
+                            title="اتصال هاتفي بالمندوب"
+                          >
+                            <Phone className="w-3.5 h-3.5" />
+                            <span>اتصال</span>
+                          </a>
+
+                          {/* 3. Direct WhatsApp */}
+                          <a
+                            href={`https://wa.me/20${courier.phone.replace(/^0+/, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="py-1.5 px-2 bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition"
+                            title="محادثة واتساب مباشرة"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5 text-teal-600" />
+                            <span>واتساب</span>
+                          </a>
+
+                          {/* 4. Supervisor Inspection */}
+                          <button
+                            onClick={() => store.setRole('courier', courier.id)}
+                            className="py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition"
+                            title="معاينة شاشة هذا المندوب كصيدلي مشرف"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>معاينة</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Column B: الخريطة التفاعلية الموسعة (HD Live Map) - 7 cols on lg */}
+            <div className="lg:col-span-7 order-1 lg:order-2 space-y-2">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5">
+                  <span>🗺️ خريطة 6 أكتوبر والحي 11 المباشرة</span>
+                  {selectedCourierId && (
+                    <span className="text-[11px] text-indigo-600 font-bold">
+                      · تركيز على {pharmacyCouriers.find((c) => c.id === selectedCourierId)?.name}
+                    </span>
+                  )}
+                </span>
+                <span className="text-[11px] text-slate-500 font-mono">
+                  صيدلية الديب 📍
+                </span>
+              </div>
+
+              <div className="bg-white rounded-3xl p-2 border border-slate-200 shadow-md">
+                <LiveMap
+                  pharmacy={pharmacy}
+                  couriers={pharmacyCouriers}
+                  orders={pharmacyOrders}
+                  selectedCourierId={selectedCourierId}
+                  onSelectCourier={(id) => setSelectedCourierId(id)}
+                  className="h-[520px] sm:h-[600px] lg:h-[680px]"
+                />
+              </div>
+
+              {/* Bottom Quick Info Bar on Desktop */}
+              <div className="bg-slate-900 text-white rounded-2xl p-3 px-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                  <span className="font-extrabold text-emerald-400">صيدليه الديب - مقر التوزيع:</span>
+                  <span className="text-slate-300">
+                    الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-[11px] text-slate-400 font-mono">
+                  <span>هاتف: {pharmacy.phone}</span>
+                  <span>المسئول: {pharmacy.pharmacistName}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

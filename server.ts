@@ -26,25 +26,62 @@ interface CloudData {
   lastUpdated: string;
 }
 
+const DEFAULT_COURIER_01000321253 = {
+  id: 'courier-01000321253',
+  name: 'كابتن التوصيل',
+  phone: '01000321253',
+  password: '123',
+  vehicleType: 'موتوسيكل',
+  vehicleNumber: '٧٨٩٥',
+  pharmacyId: 'pharma-main',
+  deliveryFeePerOrder: 7,
+  isOnDuty: true,
+  currentLocation: {
+    lat: 29.97056,
+    lng: 30.89801,
+    address: 'الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب',
+    speedKmH: 0,
+    lastMovedTimestamp: Date.now(),
+    isStationary: true,
+    stationarySeconds: 0,
+    accuracy: 15,
+    isGpsLive: true,
+  },
+  shift: {
+    startTime: new Date().toISOString(),
+    isEnded: false,
+    totalOrdersDelivered: 0,
+    totalDeliveryEarnings: 0,
+    totalCollectedCash: 0,
+    totalCollectedVisa: 0,
+    totalCollectedInstapay: 0,
+  },
+  isStoppageAlertActive: false,
+  stoppageAlertAcknowledged: false,
+  createdAt: new Date().toISOString(),
+  isInternetOnline: true,
+  offlineSeconds: 0,
+};
+
 const DEFAULT_INITIAL_DATA: CloudData = {
   pharmacies: [
     {
       id: 'pharma-main',
       name: 'صيدليه الديب',
       pharmacistName: 'د.محمد',
-      phone: '01063629587',
-      address: 'الحي ١١ الاتحاد التعاوني',
+      phone: '01000321253',
+      address: 'الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب',
       password: 'pharmacist123',
       globalDeliveryFee: 7,
       coordinates: {
-        lat: 30.05688,
-        lng: 31.20572,
-        address: 'الحي ١١ الاتحاد التعاوني',
+        lat: 29.97056,
+        lng: 30.89801,
+        address: 'الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب',
       },
       createdAt: '2026-10-06T00:00:00.000Z',
     },
   ],
-  couriers: [],
+  couriers: [DEFAULT_COURIER_01000321253],
   orders: [],
   shiftSummaries: [],
   lastUpdated: new Date().toISOString(),
@@ -59,10 +96,38 @@ function readCloudData(): CloudData {
         // Strip out any fake/unwanted placeholder pharmacies
         parsed.pharmacies = parsed.pharmacies.filter(
           (p: any) => p.name !== 'صيدلية النور والشفاء (فرع 2)' && p.id !== 'pharma-branch-2'
-        );
+        ).map((p: any) => {
+          if (p.id === 'pharma-main') {
+            return {
+              ...p,
+              name: 'صيدليه الديب',
+              phone: '01000321253',
+              address: 'الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب',
+              coordinates: {
+                lat: 29.97056,
+                lng: 30.89801,
+                address: 'الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب',
+              },
+            };
+          }
+          return p;
+        });
         if (parsed.pharmacies.length === 0) {
           parsed.pharmacies = DEFAULT_INITIAL_DATA.pharmacies;
         }
+
+        // Guarantee courier with phone 01000321253 exists in couriers list
+        if (!Array.isArray(parsed.couriers)) {
+          parsed.couriers = [DEFAULT_COURIER_01000321253];
+        } else {
+          const has01000 = parsed.couriers.some(
+            (c: any) => c.phone === '01000321253' || c.id === 'courier-01000321253'
+          );
+          if (!has01000) {
+            parsed.couriers.unshift(DEFAULT_COURIER_01000321253);
+          }
+        }
+
         return parsed;
       }
     }
@@ -249,6 +314,104 @@ app.post('/api/courier/heartbeat', (req, res) => {
     saveCloudData(current);
   }
   res.json({ success: true, couriers: current.couriers });
+});
+
+// -------------------------------------------------------------
+// Dedicated Real-Time Order Management Endpoints
+// -------------------------------------------------------------
+
+// 3.5 Create Order Directly (Instant Mobile Sync)
+app.post('/api/order/create', (req, res) => {
+  const order = req.body;
+  if (!order || !order.id || !order.orderValue) {
+    return res.status(400).json({ success: false, error: 'بيانات الأوردر غير مكتملة' });
+  }
+
+  const current = readCloudData();
+  const existingIdx = current.orders.findIndex((o) => o.id === order.id);
+  if (existingIdx >= 0) {
+    current.orders[existingIdx] = { ...current.orders[existingIdx], ...order };
+  } else {
+    current.orders.unshift(order);
+  }
+
+  saveCloudData(current);
+  console.log(`[Server] Order created: ${order.orderNumber} (${order.orderValue} EGP) for courier: ${order.courierId}`);
+  res.json({ success: true, order, orders: current.orders });
+});
+
+// 3.6 Update Order Directly
+app.post('/api/order/update', (req, res) => {
+  const { orderId, updates } = req.body;
+  if (!orderId || !updates) {
+    return res.status(400).json({ success: false, error: 'معرف الأوردر والتحديثات مطلوبة' });
+  }
+
+  const current = readCloudData();
+  current.orders = current.orders.map((o) =>
+    o.id === orderId ? { ...o, ...updates, updatedAt: new Date().toISOString() } : o
+  );
+  saveCloudData(current);
+  res.json({ success: true, orders: current.orders });
+});
+
+// 3.7 Deliver Order (Adds +7 EGP delivery fee and updates shift)
+app.post('/api/order/deliver', (req, res) => {
+  const { orderId, courierId, deliveredFeeAdded = 7 } = req.body;
+  if (!orderId) {
+    return res.status(400).json({ success: false, error: 'معرف الأوردر مطلوب' });
+  }
+
+  const current = readCloudData();
+  const ordIdx = current.orders.findIndex((o) => o.id === orderId);
+  if (ordIdx >= 0) {
+    const ord = current.orders[ordIdx];
+    current.orders[ordIdx] = {
+      ...ord,
+      status: 'delivered',
+      deliveredAt: new Date().toISOString(),
+      completedFeeAdded: deliveredFeeAdded,
+      totalValueWithDelivery: Number(ord.orderValue) + Number(deliveredFeeAdded),
+    };
+
+    // Update courier shift earnings
+    const cId = courierId || ord.courierId;
+    const cIdx = current.couriers.findIndex((c) => c.id === cId);
+    if (cIdx >= 0) {
+      const c = current.couriers[cIdx];
+      const fee = Number(ord.deliveryFee) || 7;
+      const isCash = ord.paymentMethod === 'cash';
+      const isVisa = ord.paymentMethod === 'visa';
+      const isInsta = ord.paymentMethod === 'instapay';
+      current.couriers[cIdx].shift = {
+        ...c.shift,
+        totalOrdersDelivered: (c.shift?.totalOrdersDelivered || 0) + 1,
+        totalDeliveryEarnings: (c.shift?.totalDeliveryEarnings || 0) + fee,
+        totalCollectedCash: (c.shift?.totalCollectedCash || 0) + (isCash ? Number(ord.orderValue) : 0),
+        totalCollectedVisa: (c.shift?.totalCollectedVisa || 0) + (isVisa ? Number(ord.orderValue) : 0),
+        totalCollectedInstapay: (c.shift?.totalCollectedInstapay || 0) + (isInsta ? Number(ord.orderValue) : 0),
+      };
+    }
+
+    saveCloudData(current);
+  }
+
+  res.json({ success: true, orders: current.orders, couriers: current.couriers });
+});
+
+// 3.8 Get Orders
+app.get('/api/orders', (req, res) => {
+  const current = readCloudData();
+  const courierId = req.query.courierId as string;
+  const pharmacyId = req.query.pharmacyId as string;
+  let result = current.orders;
+  if (pharmacyId) {
+    result = result.filter((o) => o.pharmacyId === pharmacyId);
+  }
+  if (courierId) {
+    result = result.filter((o) => o.courierId === courierId);
+  }
+  res.json({ success: true, orders: result });
 });
 
 // 4. Add Pharmacy

@@ -1,9 +1,9 @@
 import { LocationCoordinates } from '../types';
 
 export const PHARMACY_BASE_LOCATION: LocationCoordinates = {
-  lat: 30.05688,
-  lng: 31.20572,
-  address: 'صيدليه الديب - الحي ١١ الاتحاد التعاوني',
+  lat: 29.97056,
+  lng: 30.89801,
+  address: 'الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب',
 };
 
 // Calculate distance between two coordinates in meters (Haversine formula)

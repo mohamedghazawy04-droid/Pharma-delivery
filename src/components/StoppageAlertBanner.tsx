@@ -81,7 +81,7 @@ export const StoppageAlertBanner: React.FC<Props> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-extrabold text-sm sm:text-base tracking-wide">
-                      ⚠️ إنذار: انقطاع اتصال الإنترنت بالهاتف (تجاوز 5 دقائق)!
+                      ⚠️ إنذار: انقطاع اتصال الإنترنت بالهاتف (تجاوز 10 دقائق)!
                     </span>
                     <span className="bg-yellow-300 text-amber-950 text-xs px-2 py-0.5 rounded-full font-black">
                       {offlineCouriers.length} مندوب مقطوع
@@ -90,7 +90,7 @@ export const StoppageAlertBanner: React.FC<Props> = ({
                   <p className="text-xs sm:text-sm text-amber-100 font-medium mt-0.5">
                     المناديب غير المتصلين:{' '}
                     {offlineCouriers.map((c) => {
-                      const minutes = Math.floor((c.offlineSeconds || 300) / 60);
+                      const minutes = Math.floor((c.offlineSeconds || 600) / 60);
                       return (
                         <span key={c.id} className="ml-3 font-bold text-yellow-200">
                           {c.name} (منذ {minutes} دقائق)
@@ -161,7 +161,7 @@ export const StoppageAlertBanner: React.FC<Props> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-extrabold text-sm sm:text-base tracking-wide">
-                      ⚠️ إنذار توقف مندوب تجاوز 5 دقائق متواصلة!
+                      ⚠️ إنذار توقف مندوب تجاوز 10 دقائق متواصلة!
                     </span>
                     <span className="bg-yellow-400 text-red-950 text-xs px-2 py-0.5 rounded-full font-bold">
                       {stoppageCouriers.length} مندوب

@@ -515,3 +515,279 @@ export function printShiftSummaryDocument(
     }, 2000);
   }, 300);
 }
+
+/**
+ * Render Daily Orders Log HTML string for A4 document
+ */
+export function buildDailyOrdersHtml(
+  orders: import('../types').Order[],
+  pharmacy: Pharmacy,
+  couriers: import('../types').CourierProfile[] = [],
+  targetCourier?: import('../types').CourierProfile,
+  reportTitle?: string
+): string {
+  const totalOrdersCount = orders.length;
+  const totalDeliveredCount = orders.filter((o) => o.status === 'delivered').length;
+  const totalPendingCount = totalOrdersCount - totalDeliveredCount;
+  const totalOrdersValue = orders.reduce((sum, o) => sum + (Number(o.orderValue) || 0), 0);
+  const totalDeliveryFees = orders.reduce((sum, o) => sum + (Number(o.deliveryFee) || 0), 0);
+  const totalCash = orders
+    .filter((o) => o.paymentMethod === 'cash')
+    .reduce((sum, o) => sum + (Number(o.orderValue) || 0), 0);
+  const totalVisa = orders
+    .filter((o) => o.paymentMethod === 'visa')
+    .reduce((sum, o) => sum + (Number(o.orderValue) || 0), 0);
+  const totalInstapay = orders
+    .filter((o) => o.paymentMethod === 'instapay')
+    .reduce((sum, o) => sum + (Number(o.orderValue) || 0), 0);
+
+  const todayStr = new Date().toLocaleDateString('ar-EG', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  const ordersRows = orders
+    .map((ord, idx) => {
+      const courierObj =
+        couriers.find((c) => c.id === ord.courierId) ||
+        (ord.courierPhone ? couriers.find((c) => c.phone === ord.courierPhone) : undefined);
+      const courierDisplayName =
+        ord.courierName || courierObj?.name || (targetCourier ? targetCourier.name : 'كابتن الصيدلية');
+      const courierDisplayPhone =
+        ord.courierPhone || courierObj?.phone || (targetCourier ? targetCourier.phone : '');
+
+      const isDelivered = ord.status === 'delivered';
+      const statusLabel = isDelivered ? '✅ تم التسليم' : '🚴 قيد التوصيل';
+      const statusBg = isDelivered ? '#dcfce7; color: #166534;' : '#fef3c7; color: #92400e;';
+
+      const pLabel =
+        ord.paymentMethod === 'cash'
+          ? '💵 نقدي'
+          : ord.paymentMethod === 'visa'
+          ? '💳 فيزا'
+          : '⚡ انستاباي';
+
+      const timeStr = ord.createdAt
+        ? new Date(ord.createdAt).toLocaleTimeString('ar-EG', {
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        : '--:--';
+
+      return `
+      <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+        <td style="padding: 7px 6px; text-align: center; color: #64748b; font-weight: bold;">${idx + 1}</td>
+        <td style="padding: 7px 6px; text-align: right; font-weight: bold; color: #0f172a; font-family: monospace;">${ord.orderNumber}</td>
+        <td style="padding: 7px 6px; text-align: center; color: #475569; font-size: 10px;">${timeStr}</td>
+        <td style="padding: 7px 6px; text-align: center;">
+          <span style="display: inline-block; padding: 2px 5px; border-radius: 4px; font-size: 10px; font-weight: bold; background: #f1f5f9; color: #334155;">${ord.orderType || 'عادي'}</span>
+        </td>
+        <td style="padding: 7px 6px; text-align: left; font-family: monospace; font-weight: 800; color: #0f172a;">${Number(ord.orderValue).toFixed(2)} ج</td>
+        <td style="padding: 7px 6px; text-align: left; font-family: monospace; font-weight: bold; color: #b45309;">${Number(ord.deliveryFee || 7).toFixed(2)} ج</td>
+        <td style="padding: 7px 6px; text-align: center; font-size: 10px; font-weight: bold;">${pLabel}</td>
+        <td style="padding: 7px 6px; text-align: right; font-size: 10px; font-weight: bold; color: #1e293b;">
+          ${courierDisplayName} ${courierDisplayPhone ? `<span style="color: #64748b; font-family: monospace;">(${courierDisplayPhone})</span>` : ''}
+        </td>
+        <td style="padding: 7px 6px; text-align: center;">
+          <span style="display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; background: ${statusBg}">${statusLabel}</span>
+        </td>
+      </tr>
+      `;
+    })
+    .join('');
+
+  return `
+    <div style="width: 794px; min-height: 1120px; padding: 36px 42px; background: #ffffff; color: #0f172a; font-family: system-ui, -apple-system, sans-serif; direction: rtl; box-sizing: border-box; position: relative;">
+      
+      <!-- Header with Pharmacy Details -->
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #059669; padding-bottom: 16px; margin-bottom: 18px;">
+        <div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="background: #059669; color: #ffffff; width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: bold;">💊</div>
+            <h1 style="font-size: 22px; font-weight: 800; margin: 0; color: #0f172a;">${pharmacy.name}</h1>
+          </div>
+          <p style="font-size: 12px; color: #475569; margin: 4px 0 0 0; line-height: 1.4;">
+            العنوان: <strong>${pharmacy.address}</strong>
+          </p>
+          <p style="font-size: 11px; color: #64748b; margin: 3px 0 0 0;">
+            هاتف الصيدلية: <span style="direction: ltr; display: inline-block; font-family: monospace; font-weight: bold; color: #0f172a;">${pharmacy.phone || '01000321253'}</span>
+            · الصيدلي المسئول: <strong>${pharmacy.pharmacistName || 'د.محمد'}</strong>
+          </p>
+        </div>
+
+        <div style="text-align: left;">
+          <div style="background: #ecfdf5; border: 1px solid #a7f3d0; padding: 8px 14px; border-radius: 10px; display: inline-block;">
+            <span style="font-size: 11px; color: #059669; font-weight: bold; display: block;">سجل الأوردرات اليومي الرسمي</span>
+            <span style="font-size: 13px; font-weight: 800; color: #065f46; font-family: monospace;">${reportTitle || 'سجل المبيعات والتوصيل'}</span>
+          </div>
+          <div style="font-size: 10px; color: #64748b; margin-top: 4px;">
+            التاريخ: <strong>${todayStr}</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Financial Metrics Summary (4 Cards) -->
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px;">
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; text-align: center;">
+          <span style="font-size: 10px; font-weight: bold; color: #475569; display: block;">إجمالي الأوردرات</span>
+          <span style="font-size: 20px; font-weight: 800; color: #0f172a; font-family: monospace; display: block; margin-top: 2px;">${totalOrdersCount}</span>
+          <span style="font-size: 9px; color: #64748b;">(${totalDeliveredCount} مسلم · ${totalPendingCount} جاري)</span>
+        </div>
+
+        <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 8px 10px; text-align: center;">
+          <span style="font-size: 10px; font-weight: bold; color: #065f46; display: block;">إجمالي المبيعات</span>
+          <span style="font-size: 20px; font-weight: 800; color: #047857; font-family: monospace; display: block; margin-top: 2px;">${totalOrdersValue.toFixed(2)} ج</span>
+          <span style="font-size: 9px; color: #059669;">قيمة أدوية الأوردرات</span>
+        </div>
+
+        <div style="background: #fef3c7; border: 1px solid #fde68a; border-radius: 10px; padding: 8px 10px; text-align: center;">
+          <span style="font-size: 10px; font-weight: bold; color: #92400e; display: block;">مصاريف التوصيل</span>
+          <span style="font-size: 20px; font-weight: 800; color: #b45309; font-family: monospace; display: block; margin-top: 2px;">${totalDeliveryFees.toFixed(2)} ج</span>
+          <span style="font-size: 9px; color: #d97706;">مستحقات المناديب</span>
+        </div>
+
+        <div style="background: #f3e8ff; border: 1px solid #e9d5ff; border-radius: 10px; padding: 8px 10px; text-align: center;">
+          <span style="font-size: 10px; font-weight: bold; color: #6b21a8; display: block;">كاش / إلكتروني</span>
+          <span style="font-size: 14px; font-weight: 800; color: #581c87; font-family: monospace; display: block; margin-top: 4px;">
+            كاش: ${totalCash.toFixed(0)} ج
+          </span>
+          <span style="font-size: 9px; color: #7e22ce;">فيزا/انستا: ${(totalVisa + totalInstapay).toFixed(0)} ج</span>
+        </div>
+      </div>
+
+      <!-- Orders Table -->
+      <div style="margin-bottom: 24px;">
+        <table style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
+          <thead>
+            <tr style="background: #f1f5f9; color: #334155; font-size: 10px; font-weight: 800; border-bottom: 2px solid #cbd5e1;">
+              <th style="padding: 7px 6px; text-align: center; width: 30px;">م</th>
+              <th style="padding: 7px 6px; text-align: right; width: 60px;">رقم الأوردر</th>
+              <th style="padding: 7px 6px; text-align: center; width: 60px;">الوقت</th>
+              <th style="padding: 7px 6px; text-align: center; width: 55px;">النوع</th>
+              <th style="padding: 7px 6px; text-align: left; width: 85px;">القيمة</th>
+              <th style="padding: 7px 6px; text-align: left; width: 75px;">التوصيل</th>
+              <th style="padding: 7px 6px; text-align: center; width: 65px;">الدفع</th>
+              <th style="padding: 7px 6px; text-align: right;">المندوب المسئول</th>
+              <th style="padding: 7px 6px; text-align: center; width: 85px;">الحالة</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ordersRows || '<tr><td colspan="9" style="text-align: center; padding: 16px; color: #94a3b8; font-size: 12px;">لا توجد أوردرات مسجلة لهذا اليوم</td></tr>'}
+          </tbody>
+          <tfoot>
+            <tr style="background: #f8fafc; font-weight: bold; font-size: 11px; border-top: 2px solid #cbd5e1;">
+              <td colspan="4" style="padding: 8px 6px; text-align: right; color: #334155;">الإجمالي العام:</td>
+              <td style="padding: 8px 6px; text-align: left; font-family: monospace; color: #047857; font-weight: 800;">${totalOrdersValue.toFixed(2)} ج</td>
+              <td style="padding: 8px 6px; text-align: left; font-family: monospace; color: #b45309; font-weight: 800;">${totalDeliveryFees.toFixed(2)} ج</td>
+              <td colspan="3" style="padding: 8px 6px; text-align: left; font-size: 10px; color: #64748b;">
+                (المجموع الكلي مع التوصيل: ${(totalOrdersValue + totalDeliveryFees).toFixed(2)} ج)
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- Signatures Footer -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 30px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 11px; text-align: center;">
+        <div>
+          <span style="font-weight: bold; color: #475569; display: block; margin-bottom: 25px;">مسئول حركة المناديب:</span>
+          <div style="border-bottom: 1px dotted #94a3b8; width: 130px; margin: 0 auto 4px auto;"></div>
+          <span style="font-size: 10px; color: #64748b;">توقيع الاستلام</span>
+        </div>
+
+        <div>
+          <span style="font-weight: bold; color: #475569; display: block; margin-bottom: 25px;">اعتماد الصيدلي المسئول:</span>
+          <div style="border-bottom: 1px dotted #94a3b8; width: 130px; margin: 0 auto 4px auto;"></div>
+          <span style="font-size: 10px; color: #64748b;">د. ${pharmacy.pharmacistName || 'محمد'}</span>
+        </div>
+
+        <div>
+          <span style="font-weight: bold; color: #475569; display: block; margin-bottom: 10px;">خاتم صيدلية الديب الرسمي:</span>
+          <div style="width: 75px; height: 46px; border: 1.5px dashed #94a3b8; border-radius: 8px; margin: 0 auto; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #94a3b8;">
+            خاتم الصيدلية
+          </div>
+        </div>
+      </div>
+
+      <!-- Watermark Note -->
+      <div style="margin-top: 20px; text-align: center; font-size: 9px; color: #94a3b8;">
+        صيدلية الديب · الجيزة ٦ أكتوبر الحي ١١ · هاتف: 01000321253 · مستخرج آلياً ومحفوظ سحابياً
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Export daily orders list to PDF
+ */
+export async function exportDailyOrdersToPdf(
+  orders: import('../types').Order[],
+  pharmacy: Pharmacy,
+  couriers: import('../types').CourierProfile[] = [],
+  targetCourier?: import('../types').CourierProfile,
+  reportTitle?: string
+): Promise<jsPDF> {
+  const dateStr = new Date().toLocaleDateString('ar-EG').replace(/[/\\?%*:|"<>]/g, '-');
+  const safeTitle = (reportTitle || 'سجل_الاوردرات_اليومي').replace(/[/\\?%*:|"<>]/g, '_');
+  const fileName = `${safeTitle}_${pharmacy.name.replace(/[/\\?%*:|"<>]/g, '_')}_${dateStr}.pdf`;
+
+  const html = buildDailyOrdersHtml(orders, pharmacy, couriers, targetCourier, reportTitle);
+  return await htmlToPdf(html, fileName);
+}
+
+/**
+ * Print daily orders list directly
+ */
+export function printDailyOrdersDocument(
+  orders: import('../types').Order[],
+  pharmacy: Pharmacy,
+  couriers: import('../types').CourierProfile[] = [],
+  targetCourier?: import('../types').CourierProfile,
+  reportTitle?: string
+) {
+  const html = buildDailyOrdersHtml(orders, pharmacy, couriers, targetCourier, reportTitle);
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = 'none';
+
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow?.document;
+  if (!doc) {
+    document.body.removeChild(iframe);
+    return;
+  }
+
+  doc.open();
+  doc.write(`
+    <!doctype html>
+    <html lang="ar" dir="rtl">
+      <head>
+        <meta charset="utf-8">
+        <title>${reportTitle || 'سجل الأوردرات اليومي'}</title>
+        <style>
+          @page { size: A4; margin: 10mm; }
+          body { margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+        </style>
+      </head>
+      <body>
+        ${html}
+      </body>
+    </html>
+  `);
+  doc.close();
+
+  setTimeout(() => {
+    iframe.contentWindow?.focus();
+    iframe.contentWindow?.print();
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+    }, 2000);
+  }, 300);
+}

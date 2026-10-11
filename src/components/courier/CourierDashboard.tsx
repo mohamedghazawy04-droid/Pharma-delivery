@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Coins,
   Package,
@@ -17,6 +17,10 @@ import {
   Gauge,
   Crosshair,
   WifiOff,
+  FileText,
+  RefreshCw,
+  Download,
+  BellRing,
 } from 'lucide-react';
 import { CourierProfile, Order, Pharmacy, OrderType } from '../../types';
 import { store } from '../../services/store';
@@ -26,7 +30,8 @@ import {
   fetchRealAddressFromCoords,
   formatCoordinates,
 } from '../../utils/geo';
-import { playStoppageBellSound, requestNotificationPermission } from '../../utils/audio';
+import { playStoppageBellSound, playCoinSound, requestNotificationPermission } from '../../utils/audio';
+import { exportDailyOrdersToPdf } from '../../services/pdfExportService';
 
 interface Props {
   courier: CourierProfile;
@@ -45,14 +50,42 @@ export const CourierDashboard: React.FC<Props> = ({
 }) => {
   const [gpsActive, setGpsActive] = useState(true);
   const [gpsError, setGpsError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'orders' | 'map'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'history' | 'map'>('orders');
   const [isDeviceOnline, setIsDeviceOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isRefreshingOrders, setIsRefreshingOrders] = useState(false);
+  const [newOrderBanner, setNewOrderBanner] = useState<string | null>(null);
+
+  // Normalize courier phone for foolproof order matching
+  const normCourierPhone = courier.phone ? courier.phone.replace(/\D/g, '') : '';
+
+  // Robust order matching: By courier.id OR courier.phone OR fallback if sole courier
+  const isOrderForThisCourier = (o: Order) => {
+    if (o.courierId === courier.id) return true;
+    if (normCourierPhone) {
+      if (o.courierPhone && o.courierPhone.replace(/\D/g, '') === normCourierPhone) return true;
+      if (o.courierId && o.courierId.replace(/\D/g, '') === normCourierPhone) return true;
+      if (o.courierId === `courier-${normCourierPhone}`) return true;
+    }
+    // If only 1 courier in this pharmacy and order belongs to this pharmacy
+    if (allCouriers.length <= 1 && o.pharmacyId === pharmacy.id) return true;
+    return false;
+  };
 
   // Filter and sort active unarchived orders sequentially (#1, #2, #3, ...)
   const courierActiveOrders = orders
-    .filter((o) => o.courierId === courier.id && !o.isArchived)
+    .filter((o) => !o.isArchived && isOrderForThisCourier(o))
+    .sort((a, b) => {
+      const numA = parseInt(a.orderNumber.replace(/\D/g, '')) || 0;
+      const numB = parseInt(b.orderNumber.replace(/\D/g, '')) || 0;
+      return numA - numB;
+    });
+
+  // Complete Daily Orders Log (all orders assigned to this courier today)
+  const courierDailyOrders = orders
+    .filter((o) => isOrderForThisCourier(o))
     .sort((a, b) => {
       const numA = parseInt(a.orderNumber.replace(/\D/g, '')) || 0;
       const numB = parseInt(b.orderNumber.replace(/\D/g, '')) || 0;
@@ -62,6 +95,28 @@ export const CourierDashboard: React.FC<Props> = ({
   const pendingOrders = courierActiveOrders.filter(
     (o) => o.status !== 'delivered' && o.status !== 'cancelled'
   );
+
+  const prevActiveCount = useRef(courierActiveOrders.length);
+
+  // Fast background polling every 2s so orders assigned by pharmacist appear immediately on mobile
+  useEffect(() => {
+    store.fetchCloudData();
+    const pollTimer = setInterval(() => {
+      store.fetchCloudData();
+    }, 2000);
+    return () => clearInterval(pollTimer);
+  }, [courier.id]);
+
+  // Audio & banner chime when pharmacist adds a new order to this courier
+  useEffect(() => {
+    if (courierActiveOrders.length > prevActiveCount.current) {
+      const added = courierActiveOrders.length - prevActiveCount.current;
+      playCoinSound();
+      setNewOrderBanner(`🔔 وصلك (${added}) أوردر جديد تم إسناده لك من الصيدلية الآن!`);
+      setTimeout(() => setNewOrderBanner(null), 9000);
+    }
+    prevActiveCount.current = courierActiveOrders.length;
+  }, [courierActiveOrders.length]);
 
   const isAlerting = courier.isStoppageAlertActive;
   const isStationary = courier.currentLocation.isStationary;
@@ -242,6 +297,32 @@ export const CourierDashboard: React.FC<Props> = ({
         </div>
       )}
 
+      {/* Real-time Order Assignment Notification Banner */}
+      {newOrderBanner && (
+        <div className="p-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white rounded-3xl flex items-center justify-between gap-3 shadow-xl border-2 border-emerald-300 animate-in fade-in slide-in-from-top duration-300">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-white/20 rounded-2xl animate-bounce shrink-0">
+              <BellRing className="w-6 h-6 text-yellow-300" />
+            </div>
+            <div>
+              <strong className="text-sm block font-black">{newOrderBanner}</strong>
+              <p className="text-xs text-emerald-100 mt-0.5">
+                قام الصيدلي بإسناد هذا الأوردر لك للتو. يظهر الأوردر في جدول أوردراتك الحالية أدناه.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setActiveTab('orders');
+              setNewOrderBanner(null);
+            }}
+            className="px-4 py-2 bg-white text-emerald-900 rounded-xl text-xs font-black hover:bg-emerald-50 transition shadow-xs shrink-0"
+          >
+            مشاهدة الأوردر الآن 👀
+          </button>
+        </div>
+      )}
+
       {/* Identity & Pharmacy Association */}
       <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-xs">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -280,21 +361,21 @@ export const CourierDashboard: React.FC<Props> = ({
             </button>
 
             <button
-              onClick={() => store.simulateStoppage(courier.id, 305)}
+              onClick={() => store.simulateStoppage(courier.id, 605)}
               className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition"
-              title="تجربة رنين جرس إنذار التوقف 5 دقائق فوراً"
+              title="تجربة رنين جرس إنذار التوقف 10 دقائق فوراً"
             >
               <AlertTriangle className="w-3.5 h-3.5" />
-              <span>فحص إنذار التوقف 5د 🔔</span>
+              <span>فحص إنذار التوقف 10د 🔔</span>
             </button>
 
             <button
-              onClick={() => store.simulateOffline(courier.id, 5)}
+              onClick={() => store.simulateOffline(courier.id, 10)}
               className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-xl text-xs font-bold transition"
-              title="تجربة رنين إنذار انقطاع النت 5 دقائق فوراً"
+              title="تجربة رنين إنذار انقطاع النت 10 دقائق فوراً"
             >
               <Radio className="w-3.5 h-3.5 text-amber-600" />
-              <span>فحص إنذار غلق النت 5د 📶</span>
+              <span>فحص إنذار غلق النت 10د 📶</span>
             </button>
 
             <button
@@ -458,7 +539,7 @@ export const CourierDashboard: React.FC<Props> = ({
                 {formatDurationSeconds(courier.currentLocation.stationarySeconds)}
               </span>
               <span className="text-[10px] text-slate-500 block">
-                (الإنذار ينطلق عند 5 دقائق)
+                (الإنذار ينطلق عند 10 دقائق)
               </span>
             </div>
 

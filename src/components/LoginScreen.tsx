@@ -85,6 +85,11 @@ export const LoginScreen: React.FC<Props> = ({
         setCourierPhone('');
         setCourierPassword('');
         setCourierError('');
+        try {
+          if (typeof window !== 'undefined' && !window.location.search.includes('role=courier')) {
+            window.history.replaceState(null, '', '?role=courier');
+          }
+        } catch (e) {}
       }
     } catch (err: any) {
       setCourierError('حدث خطأ أثناء محاولة تسجيل الدخول');
@@ -116,7 +121,17 @@ export const LoginScreen: React.FC<Props> = ({
         nationalId: newCourierNationalId.trim(),
       });
 
-      setRegSuccessMessage(`تم تسجيل الكابتن ${registered.name} بنجاح، وربطه بالنظام السحابي!`);
+      setRegSuccessMessage(`تم حفظ وتسجيل الكابتن ${registered.name} بنجاح، وجاري فتح الشاشة...`);
+      try {
+        if (typeof window !== 'undefined' && !window.location.search.includes('role=courier')) {
+          window.history.replaceState(null, '', '?role=courier');
+        }
+      } catch (e) {}
+
+      // Auto login as this newly registered courier
+      setTimeout(() => {
+        store.loginCourier(newCourierPhone.trim(), newCourierPassword.trim());
+      }, 600);
     } catch (err: any) {
       setCourierError(err?.message || 'حدث خطأ أثناء حفظ بيانات المندوب، يرجى المحاولة ثانية');
     } finally {

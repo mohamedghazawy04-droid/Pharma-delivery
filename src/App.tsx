@@ -42,28 +42,31 @@ export default function App() {
     (new URLSearchParams(window.location.search).get('role') === 'courier' ||
       new URLSearchParams(window.location.search).get('mode') === 'courier');
 
-  // If opened as courier link: courier must be authenticated
-  if (isCourierLink && !state.authenticatedCourierId) {
-    return (
-      <LoginScreen
-        pharmacies={state.pharmacies}
-        activePharmacyId={state.activePharmacyId}
-        defaultMode="courier"
-        lockMode="courier"
-      />
-    );
-  }
-
-  // If opened as pharmacist dashboard: pharmacist must be authenticated
-  if (!isCourierLink && !state.authenticatedAsPharmacist) {
-    return (
-      <LoginScreen
-        pharmacies={state.pharmacies}
-        activePharmacyId={state.activePharmacyId}
-        defaultMode="pharmacist"
-        lockMode="pharmacist"
-      />
-    );
+  // Authentication Check:
+  if (state.role === 'courier' || isCourierLink) {
+    // If not authenticated as courier AND not pharmacist supervisor
+    if (!state.authenticatedCourierId && !state.authenticatedAsPharmacist) {
+      return (
+        <LoginScreen
+          pharmacies={state.pharmacies}
+          activePharmacyId={state.activePharmacyId}
+          defaultMode="courier"
+          lockMode="courier"
+        />
+      );
+    }
+  } else {
+    // Pharmacist manager role
+    if (!state.authenticatedAsPharmacist) {
+      return (
+        <LoginScreen
+          pharmacies={state.pharmacies}
+          activePharmacyId={state.activePharmacyId}
+          defaultMode="pharmacist"
+          lockMode="pharmacist"
+        />
+      );
+    }
   }
 
   const activePharmacy =

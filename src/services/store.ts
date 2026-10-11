@@ -39,6 +39,15 @@ function mergeById<T extends { id: string }>(existing: T[], incoming: T[]): T[] 
   return Array.from(map.values());
 }
 
+// Normalize Arabic/Persian digits to standard digits
+export function normalizeDigits(str: string): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .trim();
+}
+
 interface AppState {
   role: UserRole;
   activePharmacyId: string;
@@ -57,18 +66,55 @@ const DEFAULT_INITIAL_PHARMACIES: Pharmacy[] = [
     id: 'pharma-main',
     name: 'صيدليه الديب',
     pharmacistName: 'د.محمد',
-    phone: '01063629587',
-    address: 'الحي ١١ الاتحاد التعاوني',
+    phone: '01000321253',
+    address: 'الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب',
     password: 'pharmacist123',
     globalDeliveryFee: 7,
     coordinates: {
-      lat: 30.05688,
-      lng: 31.20572,
-      address: 'الحي ١١ الاتحاد التعاوني',
+      lat: 29.97056,
+      lng: 30.89801,
+      address: 'الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب',
     },
     createdAt: '2026-10-06T00:00:00.000Z',
   },
 ];
+
+export const DEFAULT_COURIER_01000321253: CourierProfile = {
+  id: 'courier-01000321253',
+  name: 'كابتن التوصيل',
+  phone: '01000321253',
+  password: '123',
+  vehicleType: 'موتوسيكل',
+  vehicleNumber: '٧٨٩٥',
+  pharmacyId: 'pharma-main',
+  deliveryFeePerOrder: 7,
+  isOnDuty: true,
+  currentLocation: {
+    lat: 29.97056,
+    lng: 30.89801,
+    address: 'الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب',
+    speedKmH: 0,
+    lastMovedTimestamp: Date.now(),
+    isStationary: true,
+    stationarySeconds: 0,
+    accuracy: 15,
+    isGpsLive: true,
+  },
+  shift: {
+    startTime: new Date().toISOString(),
+    isEnded: false,
+    totalOrdersDelivered: 0,
+    totalDeliveryEarnings: 0,
+    totalCollectedCash: 0,
+    totalCollectedVisa: 0,
+    totalCollectedInstapay: 0,
+  },
+  isStoppageAlertActive: false,
+  stoppageAlertAcknowledged: false,
+  createdAt: '2026-10-06T00:00:00.000Z',
+  isInternetOnline: true,
+  offlineSeconds: 0,
+};
 
 function loadInitialState(): AppState {
   try {
@@ -84,8 +130,24 @@ function loadInitialState(): AppState {
             !p.name.includes('النور والشفاء')
         );
 
-        const finalPharmacies =
-          cleanPharmacies.length > 0 ? cleanPharmacies : DEFAULT_INITIAL_PHARMACIES;
+        const finalPharmacies = (
+          cleanPharmacies.length > 0 ? cleanPharmacies : DEFAULT_INITIAL_PHARMACIES
+        ).map((p) => {
+          if (p.id === 'pharma-main') {
+            return {
+              ...p,
+              name: 'صيدليه الديب',
+              phone: '01000321253',
+              address: 'الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب',
+              coordinates: {
+                lat: 29.97056,
+                lng: 30.89801,
+                address: 'الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب',
+              },
+            };
+          }
+          return p;
+        });
 
         const activeStillExists = finalPharmacies.some(
           (p) => p.id === parsed.activePharmacyId
@@ -105,20 +167,53 @@ function loadInitialState(): AppState {
         const finalCourierAuthId = parsed.authenticatedCourierId || savedCourierAuthId || null;
         const isPharmaAuth = parsed.authenticatedAsPharmacist || savedPharmaAuth;
 
-        // If URL explicitly targets courier, role is courier.
-        // Otherwise, the default control dashboard is pharmacist.
-        const finalRole: UserRole = isCourierUrl ? 'courier' : 'pharmacist';
+        // Determine active role cleanly:
+        // 1. If explicit query param ?role=courier, respect it.
+        // 2. If saved admin authenticated and NOT on courier URL, role is pharmacist.
+        // 3. If courier authenticated on device and not pharma, role is courier.
+        // 4. Default: pharmacist.
+        const finalRole: UserRole = isCourierUrl
+          ? 'courier'
+          : savedPharmaAuth
+          ? 'pharmacist'
+          : finalCourierAuthId
+          ? 'courier'
+          : 'pharmacist';
+
+        let restoredCouriers: CourierProfile[] = parsed.couriers || [];
+        if (finalCourierAuthId && !restoredCouriers.some((c) => c.id === finalCourierAuthId)) {
+          try {
+            const rawSavedProfile =
+              localStorage.getItem(`pharma_courier_profile_${finalCourierAuthId}`) ||
+              localStorage.getItem('pharma_last_logged_courier');
+            if (rawSavedProfile) {
+              const savedCourierObj = JSON.parse(rawSavedProfile);
+              if (savedCourierObj && savedCourierObj.id) {
+                restoredCouriers = [savedCourierObj, ...restoredCouriers];
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Guarantee courier with phone 01000321253 exists
+        if (!restoredCouriers.some((c) => c.phone === '01000321253' || c.id === 'courier-01000321253')) {
+          restoredCouriers.push(DEFAULT_COURIER_01000321253);
+        }
 
         return {
           role: finalRole,
           activePharmacyId: finalActiveId,
-          currentCourierId: finalCourierAuthId || parsed.currentCourierId || '',
+          currentCourierId: finalCourierAuthId || parsed.currentCourierId || restoredCouriers[0]?.id || '',
           pharmacies: finalPharmacies,
-          couriers: parsed.couriers || [], // Real data only
+          couriers: restoredCouriers,
           orders: parsed.orders || [], // Real data only
           shiftSummaries: parsed.shiftSummaries || [],
           authenticatedAsPharmacist: isPharmaAuth,
-          authenticatedCourierId: isCourierUrl ? finalCourierAuthId : null,
+          authenticatedCourierId: isCourierUrl
+            ? finalCourierAuthId
+            : savedPharmaAuth
+            ? null
+            : finalCourierAuthId,
         };
       }
     }
@@ -134,17 +229,44 @@ function loadInitialState(): AppState {
   const savedCourierAuthId = typeof localStorage !== 'undefined' ? localStorage.getItem('pharma_courier_auth_id') : null;
   const savedPharmaAuth = typeof localStorage !== 'undefined' ? localStorage.getItem('pharma_admin_authenticated') === 'true' : false;
 
+  let fallbackCouriers: CourierProfile[] = [DEFAULT_COURIER_01000321253];
+  if (savedCourierAuthId) {
+    try {
+      const rawSavedProfile =
+        localStorage.getItem(`pharma_courier_profile_${savedCourierAuthId}`) ||
+        localStorage.getItem('pharma_last_logged_courier');
+      if (rawSavedProfile) {
+        const savedCourierObj = JSON.parse(rawSavedProfile);
+        if (savedCourierObj && savedCourierObj.id) {
+          fallbackCouriers = [savedCourierObj];
+        }
+      }
+    } catch (e) {}
+  }
+
+  const finalRole: UserRole = isCourierUrl
+    ? 'courier'
+    : savedPharmaAuth
+    ? 'pharmacist'
+    : savedCourierAuthId
+    ? 'courier'
+    : 'pharmacist';
+
   // Pure clean state with only real pharmacy صيدليه الديب, NO fake pharmacies, NO fake orders and NO fake couriers
   return {
-    role: isCourierUrl ? 'courier' : 'pharmacist',
+    role: finalRole,
     activePharmacyId: DEFAULT_INITIAL_PHARMACIES[0].id,
-    currentCourierId: savedCourierAuthId || '',
+    currentCourierId: savedCourierAuthId || fallbackCouriers[0]?.id || '',
     pharmacies: DEFAULT_INITIAL_PHARMACIES,
-    couriers: [], // Empty, no fake couriers!
+    couriers: fallbackCouriers,
     orders: [], // Empty, no fake orders!
     shiftSummaries: [],
     authenticatedAsPharmacist: savedPharmaAuth,
-    authenticatedCourierId: isCourierUrl ? savedCourierAuthId : null,
+    authenticatedCourierId: isCourierUrl
+      ? savedCourierAuthId
+      : savedPharmaAuth
+      ? null
+      : savedCourierAuthId,
   };
 }
 
@@ -489,7 +611,7 @@ class Store {
     if (this.cloudPollInterval) return;
     this.cloudPollInterval = window.setInterval(() => {
       this.fetchCloudData();
-    }, 2500);
+    }, 1500);
   }
 
   // Send updates to cloud server
@@ -726,16 +848,27 @@ class Store {
     return { success: false, error: 'كلمة مرور الصيدلي غير صحيحة' };
   }
 
-  // Courier Authentication
+  // Courier Authentication (حفظ كامل وتلقائي لبيانات المندوب)
   public loginCourier(phone: string, password: string): { success: boolean; courier?: CourierProfile; error?: string } {
-    const courier = this.state.couriers.find(
-      (c) => c.phone.trim() === phone.trim() && c.password.trim() === password.trim()
-    );
+    const normPhone = normalizeDigits(phone);
+    const normPassword = normalizeDigits(password);
+
+    const courier = this.state.couriers.find((c) => {
+      const cPhone = normalizeDigits(c.phone);
+      const cPass = normalizeDigits(c.password);
+      return cPhone === normPhone && cPass === normPassword;
+    });
 
     if (courier) {
       try {
         localStorage.setItem('pharma_courier_auth_id', courier.id);
+        localStorage.setItem(`pharma_courier_profile_${courier.id}`, JSON.stringify(courier));
+        localStorage.setItem('pharma_last_logged_courier', JSON.stringify(courier));
       } catch (e) {}
+
+      const updatedCouriers = this.state.couriers.map((c) =>
+        c.id === courier.id ? { ...c, isOnDuty: true, isInternetOnline: true } : c
+      );
 
       this.state = {
         ...this.state,
@@ -743,11 +876,18 @@ class Store {
         currentCourierId: courier.id,
         authenticatedCourierId: courier.id,
         activePharmacyId: courier.pharmacyId, // Switch to courier's pharmacy
-        couriers: this.state.couriers.map((c) =>
-          c.id === courier.id ? { ...c, isOnDuty: true } : c
-        ),
+        couriers: updatedCouriers,
       };
+
       this.notify(true);
+
+      // Write directly to Firestore to guarantee persistent cloud storage
+      try {
+        if (typeof window !== 'undefined' && db) {
+          setDoc(doc(db, 'couriers', courier.id), courier, { merge: true }).catch(() => {});
+        }
+      } catch (e) {}
+
       return { success: true, courier };
     }
     return { success: false, error: 'رقم الهاتف أو كلمة المرور للمندوب غير صحيحة' };
@@ -836,7 +976,10 @@ class Store {
     quickNote?: string;
   }) {
     const targetPharmacyId = data.pharmacyId || this.state.activePharmacyId;
-    const targetCourier = this.state.couriers.find((c) => c.id === data.courierId);
+    const targetCourier =
+      this.state.couriers.find((c) => c.id === data.courierId) ||
+      this.state.couriers.find((c) => normalizeDigits(c.phone) === normalizeDigits(data.courierId)) ||
+      this.state.couriers[0];
     const pharmacy = this.state.pharmacies.find((p) => p.id === targetPharmacyId) || this.getActivePharmacy();
 
     const assignedFee =
@@ -857,7 +1000,9 @@ class Store {
       orderValue: Number(data.orderValue),
       deliveryFee: Number(assignedFee),
       paymentMethod: data.paymentMethod,
-      courierId: data.courierId,
+      courierId: targetCourier ? targetCourier.id : data.courierId,
+      courierPhone: targetCourier?.phone,
+      courierName: targetCourier?.name,
       status: 'assigned',
       createdAt: new Date().toISOString(),
       assignedAt: new Date().toISOString(),
@@ -872,6 +1017,14 @@ class Store {
       orders: [newOrder, ...this.state.orders],
     };
     this.notify(true);
+
+    // Post to Server API directly for instant mobile courier receipt
+    fetch('/api/order/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newOrder),
+    }).catch(() => {});
+
     return newOrder;
   }
 
@@ -916,6 +1069,8 @@ class Store {
           totalValueWithDelivery: isDelivered ? newOrderVal + 7 : undefined,
           paymentMethod: updates.paymentMethod || ord.paymentMethod,
           courierId: newCourierId,
+          courierPhone: targetCourier?.phone || ord.courierPhone,
+          courierName: targetCourier?.name || ord.courierName,
           deliveryFee,
           quickNote: updates.quickNote !== undefined ? updates.quickNote : ord.quickNote,
           updatedAt: new Date().toISOString(),
@@ -931,6 +1086,20 @@ class Store {
       orders: updatedOrders,
     };
     this.notify(true);
+
+    // Direct cloud update
+    fetch('/api/order/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderId,
+        updates: {
+          ...updates,
+          courierPhone: targetCourier?.phone,
+          courierName: targetCourier?.name,
+        },
+      }),
+    }).catch(() => {});
   }
 
   // Transfer order to another courier
@@ -945,6 +1114,8 @@ class Store {
           return {
             ...ord,
             courierId: targetCourierId,
+            courierPhone: targetCourier.phone,
+            courierName: targetCourier.name,
             deliveryFee: targetCourier.deliveryFeePerOrder || 7,
             assignedAt: new Date().toISOString(),
             status: 'assigned',
@@ -955,6 +1126,21 @@ class Store {
       }),
     };
     this.notify(true);
+
+    fetch('/api/order/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderId,
+        updates: {
+          courierId: targetCourierId,
+          courierPhone: targetCourier.phone,
+          courierName: targetCourier.name,
+          deliveryFee: targetCourier.deliveryFeePerOrder || 7,
+          status: 'assigned',
+        },
+      }),
+    }).catch(() => {});
   }
 
   // Update order status (في حالة تمام الأوردر تضاف قيمة 7 جنيه للأوردر ولحصالة المندوب)
@@ -1213,18 +1399,18 @@ class Store {
         let courierModified = false;
         let newCourier = { ...courier };
 
-        // 1. Stationary Stoppage Check (توقف الحركة لأكثر من 5 دقائق)
+        // 1. Stationary Stoppage Check (توقف الحركة لأكثر من 10 دقائق)
         if (courier.currentLocation.isStationary) {
           const newStationary = courier.currentLocation.stationarySeconds + 1;
-          const shouldAlertStoppage = newStationary >= 300; // 5 minutes
+          const shouldAlertStoppage = newStationary >= 600; // 10 minutes (600s)
           const alertNowActive = shouldAlertStoppage && !courier.stoppageAlertAcknowledged;
 
           if (alertNowActive) {
             hasActiveUnacknowledgedAlert = true;
-            if (newStationary === 300) {
+            if (newStationary === 600) {
               sendRealBrowserNotification(
-                '⚠️ إنذار توقف مندوب متواصل (5 دقائق)',
-                `المندوب ${courier.name} متوقف منذ 5 دقائق في الموقع: ${courier.currentLocation.address}`
+                '⚠️ إنذار توقف مندوب متواصل (10 دقائق)',
+                `المندوب ${courier.name} متوقف منذ 10 دقائق في الموقع: ${courier.currentLocation.address}`
               );
             }
           }
@@ -1245,7 +1431,7 @@ class Store {
           }
         }
 
-        // 2. Internet Disconnect & Heartbeat Check (إنذار انقطاع الإنترنت لأكثر من 5 دقائق أو 10 دقائق)
+        // 2. Internet Disconnect & Heartbeat Check (إنذار انقطاع الإنترنت لأكثر من 10 دقائق)
         const lastPing =
           courier.lastSeenTimestamp ||
           courier.currentLocation.lastMovedTimestamp ||
@@ -1253,12 +1439,12 @@ class Store {
           now;
         const secondsSincePing = Math.max(0, Math.floor((now - lastPing) / 1000));
         const isOfflineDetected =
-          courier.isInternetOnline === false || secondsSincePing >= 300; // 5 دقائق
+          courier.isInternetOnline === false || secondsSincePing >= 600; // 10 دقائق (600 ثانية)
 
         if (isOfflineDetected) {
           hasActiveUnacknowledgedAlert = true;
-          // Notify pharmacist when reaching 5 minutes (300s) or 10 minutes (600s)
-          if (secondsSincePing === 300 || secondsSincePing === 600) {
+          // Notify pharmacist when reaching 10 minutes (600s)
+          if (secondsSincePing === 600) {
             const minutesOff = Math.floor(secondsSincePing / 60);
             sendRealBrowserNotification(
               `⚠️ إنذار: انقطاع الإنترنت عن المندوب (${minutesOff} دقائق)`,
@@ -1367,25 +1553,25 @@ class Store {
               speedKmH: 0,
               stationarySeconds: seconds,
             },
-            isStoppageAlertActive: seconds >= 300,
+            isStoppageAlertActive: seconds >= 600,
             stoppageAlertAcknowledged: false,
           };
         }
         return c;
       }),
     };
-    if (seconds >= 300) {
+    if (seconds >= 600) {
       startRepeatingAlarm();
       sendRealBrowserNotification(
-        '⚠️ إنذار توقف مندوب (5 دقائق)',
-        `تم رصد توقف المندوب أكثر من 5 دقائق!`
+        '⚠️ إنذار توقف مندوب (10 دقائق)',
+        `تم رصد توقف المندوب أكثر من 10 دقائق!`
       );
     }
     this.notify(true);
   }
 
-  // Simulate offline internet disconnection (for testing the offline alarm)
-  public simulateOffline(courierId: string, minutes = 5) {
+  // Simulate offline internet disconnection (for testing the offline alarm - 10 minutes)
+  public simulateOffline(courierId: string, minutes = 10) {
     const fakeLastSeen = Date.now() - minutes * 60 * 1000 - 5000;
     this.state = {
       ...this.state,
@@ -1594,16 +1780,16 @@ class Store {
       id: `courier-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       pharmacyId: pharmacy.id,
       name: data.name.trim(),
-      phone: data.phone.trim(),
-      password: data.password.trim(),
+      phone: normalizeDigits(data.phone),
+      password: normalizeDigits(data.password),
       vehicleType: data.vehicleType,
       vehicleNumber: data.vehicleNumber.trim() || 'بدون لوحة',
-      nationalId: data.nationalId?.trim(),
+      nationalId: data.nationalId ? normalizeDigits(data.nationalId) : undefined,
       deliveryFeePerOrder: data.deliveryFeePerOrder || pharmacy.globalDeliveryFee || 7,
       currentLocation: {
         lat: pharmacy.coordinates.lat + (Math.random() - 0.5) * 0.005,
         lng: pharmacy.coordinates.lng + (Math.random() - 0.5) * 0.005,
-        address: `محيط ${pharmacy.name}`,
+        address: `محيط ${pharmacy.name} (6 أكتوبر)`,
         speedKmH: 0,
         lastMovedTimestamp: Date.now(),
         isStationary: false,
@@ -1627,7 +1813,13 @@ class Store {
     // 1. Mark as known locally so registering device doesn't trigger duplicate alert for itself
     this.knownCourierIds.add(newCourier.id);
 
-    // 2. Immediate local state update
+    // 2. Guarantee persistent profile in local storage
+    try {
+      localStorage.setItem(`pharma_courier_profile_${newCourier.id}`, JSON.stringify(newCourier));
+      localStorage.setItem('pharma_last_logged_courier', JSON.stringify(newCourier));
+    } catch (e) {}
+
+    // 3. Immediate local state update
     const isPharma = this.state.authenticatedAsPharmacist;
     if (!isPharma) {
       try {
