@@ -13,6 +13,7 @@ import { UserRole, CourierProfile, Pharmacy } from '../types';
 import { playStoppageBellSound, requestNotificationPermission } from '../utils/audio';
 import { notificationService } from '../services/notificationService';
 import { store } from '../services/store';
+import { InstallAppBanner } from './InstallAppBanner';
 
 interface Props {
   currentRole: UserRole;
@@ -143,14 +144,14 @@ export const Header: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* Courier selector when in courier view */}
+              {/* Courier selector when in courier view (visible on mobile and desktop) */}
               {currentRole === 'courier' && couriers.length > 1 && (
-                <div className="hidden sm:flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-1 rounded-xl">
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-1 rounded-xl">
                   <span className="text-[11px] text-slate-500 font-medium">المندوب:</span>
                   <select
                     value={currentCourierId}
                     onChange={(e) => onCourierSelect(e.target.value)}
-                    className="bg-transparent text-xs font-bold text-slate-800 outline-hidden cursor-pointer"
+                    className="bg-transparent text-xs font-bold text-slate-800 outline-hidden cursor-pointer max-w-[130px] sm:max-w-none truncate"
                   >
                     {couriers.map((c) => (
                       <option key={c.id} value={c.id}>
@@ -164,6 +165,9 @@ export const Header: React.FC<Props> = ({
 
           {/* Zone 3: Primary Actions */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* 1-Click PWA Install Button */}
+            <InstallAppBanner variant="compact" />
+
             {/* Alarm Sound & Browser Notification Test */}
             <button
               onClick={handleTestSoundAndPermission}

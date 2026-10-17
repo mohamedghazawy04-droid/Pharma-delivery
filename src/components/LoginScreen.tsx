@@ -295,6 +295,35 @@ export const LoginScreen: React.FC<Props> = ({
                   </div>
                 </div>
 
+                {/* Quick 1-click fill for registered couriers */}
+                {store.getState().couriers.length > 0 && (
+                  <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200">
+                    <span className="text-[11px] font-bold text-slate-600 block mb-2">
+                      اختر اسمك للدخول السريع بضغطة واحدة:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {store.getState().couriers.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setCourierPhone(c.phone);
+                            setCourierPassword(c.password);
+                          }}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs border ${
+                            courierPhone === c.phone
+                              ? 'bg-indigo-600 text-white border-indigo-600'
+                              : 'bg-white hover:bg-indigo-50 border-slate-200 text-slate-800'
+                          }`}
+                        >
+                          <span>{c.vehicleType === 'دراجة' ? '🚲' : '🏍️'}</span>
+                          <span>كابتن {c.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
                     <Phone className="w-3.5 h-3.5 text-slate-500" />

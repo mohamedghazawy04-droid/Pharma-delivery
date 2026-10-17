@@ -23,6 +23,7 @@ interface CloudData {
   couriers: any[];
   orders: any[];
   shiftSummaries: any[];
+  deletedCourierIds?: string[];
   lastUpdated: string;
 }
 
@@ -84,6 +85,7 @@ const DEFAULT_INITIAL_DATA: CloudData = {
   couriers: [DEFAULT_COURIER_01000321253],
   orders: [],
   shiftSummaries: [],
+  deletedCourierIds: [],
   lastUpdated: new Date().toISOString(),
 };
 
@@ -116,18 +118,17 @@ function readCloudData(): CloudData {
           parsed.pharmacies = DEFAULT_INITIAL_DATA.pharmacies;
         }
 
-        // Guarantee courier with phone 01000321253 exists in couriers list
-        if (!Array.isArray(parsed.couriers)) {
-          parsed.couriers = [DEFAULT_COURIER_01000321253];
-        } else {
-          const has01000 = parsed.couriers.some(
-            (c: any) => c.phone === '01000321253' || c.id === 'courier-01000321253'
+        const deletedSet = new Set<string>(parsed.deletedCourierIds || []);
+        if (Array.isArray(parsed.couriers)) {
+          // Strictly exclude deleted couriers
+          parsed.couriers = parsed.couriers.filter(
+            (c: any) => c && c.id && !deletedSet.has(c.id)
           );
-          if (!has01000) {
-            parsed.couriers.unshift(DEFAULT_COURIER_01000321253);
-          }
+        } else {
+          parsed.couriers = [];
         }
 
+        parsed.deletedCourierIds = Array.from(deletedSet);
         return parsed;
       }
     }
@@ -140,6 +141,20 @@ function readCloudData(): CloudData {
   return DEFAULT_INITIAL_DATA;
 }
 
+// Real-time Server-Sent Events (SSE) connections pool for sub-second mobile updates
+const sseClients: Set<express.Response> = new Set();
+
+function broadcastEvent(type: string, data: any) {
+  const payload = `data: ${JSON.stringify({ type, data })}\n\n`;
+  for (const client of sseClients) {
+    try {
+      client.write(payload);
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+}
+
 function saveCloudData(data: CloudData) {
   try {
     const payload = {
@@ -147,6 +162,8 @@ function saveCloudData(data: CloudData) {
       lastUpdated: new Date().toISOString(),
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+    // Instantly notify all mobile and desktop clients of the new state
+    broadcastEvent('SYNC', payload);
     return true;
   } catch (err) {
     console.error('Error saving cloud store file:', err);
@@ -172,6 +189,22 @@ function mergeById<T extends { id: string }>(existing: T[], incoming: T[]): T[] 
 // API Endpoints for Central Cloud Persistence
 // -------------------------------------------------------------
 
+// 0. Server-Sent Events Stream for Instant Multi-Device Push
+app.get('/api/events', (_req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+  const current = readCloudData();
+  res.write(`data: ${JSON.stringify({ type: 'INIT', data: current })}\n\n`);
+  sseClients.add(res);
+
+  _req.on('close', () => {
+    sseClients.delete(res);
+  });
+});
+
 // 1. Fetch current cloud state
 app.get('/api/data', (_req, res) => {
   const data = readCloudData();
@@ -180,15 +213,29 @@ app.get('/api/data', (_req, res) => {
 
 // 2. Full Sync from client (Merges by ID so clients don't overwrite each other)
 app.post('/api/sync', (req, res) => {
-  const { pharmacies, couriers, orders, shiftSummaries } = req.body;
+  const { pharmacies, couriers, orders, shiftSummaries, deletedCourierIds } = req.body;
   const current = readCloudData();
+
+  const combinedDeleted = new Set<string>([
+    ...(current.deletedCourierIds || []),
+    ...(Array.isArray(deletedCourierIds) ? deletedCourierIds : []),
+  ]);
+  current.deletedCourierIds = Array.from(combinedDeleted);
 
   const mergedPharmacies = Array.isArray(pharmacies)
     ? mergeById(current.pharmacies, pharmacies)
     : current.pharmacies;
-  const mergedCouriers = Array.isArray(couriers)
-    ? mergeById(current.couriers, couriers)
-    : current.couriers;
+
+  // Filter out any couriers that were deleted
+  const filteredCurrentCouriers = (current.couriers || []).filter(
+    (c: any) => c && c.id && !combinedDeleted.has(c.id)
+  );
+  const incomingCouriersFiltered = Array.isArray(couriers)
+    ? couriers.filter((c: any) => c && c.id && !combinedDeleted.has(c.id))
+    : filteredCurrentCouriers;
+
+  const mergedCouriers = mergeById(filteredCurrentCouriers, incomingCouriersFiltered);
+
   const mergedOrders = Array.isArray(orders)
     ? mergeById(current.orders, orders)
     : current.orders;
@@ -201,6 +248,7 @@ app.post('/api/sync', (req, res) => {
     couriers: mergedCouriers,
     orders: mergedOrders,
     shiftSummaries: mergedShifts,
+    deletedCourierIds: current.deletedCourierIds,
     lastUpdated: new Date().toISOString(),
   };
 
@@ -241,7 +289,7 @@ app.post('/api/courier/register', (req, res) => {
   res.json({ success: true, courier: updatedCourier, couriers: current.couriers });
 });
 
-// 3.1 Update Courier
+// 3.1 Update Courier Data (اسم، هاتف، كلمة مرور، عمولة، صيدلية)
 app.post('/api/courier/update', (req, res) => {
   const { courierId, updates } = req.body;
   if (!courierId || !updates) {
@@ -249,14 +297,36 @@ app.post('/api/courier/update', (req, res) => {
   }
 
   const current = readCloudData();
-  current.couriers = current.couriers.map((c) =>
-    c.id === courierId ? { ...c, ...updates, updatedAt: new Date().toISOString() } : c
-  );
+  let found = false;
+  current.couriers = current.couriers.map((c) => {
+    if (c.id === courierId) {
+      found = true;
+      return {
+        ...c,
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    return c;
+  });
+
+  if (!found && updates.phone) {
+    const norm = updates.phone.trim();
+    current.couriers = current.couriers.map((c) => {
+      if (c.phone && c.phone.trim() === norm) {
+        found = true;
+        return { ...c, ...updates, updatedAt: new Date().toISOString() };
+      }
+      return c;
+    });
+  }
+
   saveCloudData(current);
+  console.log(`[Server] Courier updated: ${courierId} (${updates.name || ''})`);
   res.json({ success: true, couriers: current.couriers });
 });
 
-// 3.2 Delete Courier
+// 3.2 Delete Courier Permanently (With Tombstoning so it never resurrects)
 app.post('/api/courier/delete', (req, res) => {
   const { courierId } = req.body;
   if (!courierId) {
@@ -264,10 +334,13 @@ app.post('/api/courier/delete', (req, res) => {
   }
 
   const current = readCloudData();
+  const deletedSet = new Set<string>(current.deletedCourierIds || []);
+  deletedSet.add(courierId);
+  current.deletedCourierIds = Array.from(deletedSet);
   current.couriers = current.couriers.filter((c) => c.id !== courierId);
   saveCloudData(current);
-  console.log(`[Server] Courier removed: ${courierId}`);
-  res.json({ success: true, couriers: current.couriers });
+  console.log(`[Server] Courier deleted & tombstoned: ${courierId}`);
+  res.json({ success: true, couriers: current.couriers, deletedCourierIds: current.deletedCourierIds });
 });
 
 // 3.3 Real-time Courier GPS Location update & Heartbeat

@@ -50,8 +50,10 @@ import { LiveMap, getCourierPalette } from '../LiveMap';
 import { AddPharmacyModal } from './AddPharmacyModal';
 import { ManagePharmaciesModal } from './ManagePharmaciesModal';
 import { EditPharmacyModal } from './EditPharmacyModal';
+import { EditCourierModal } from './EditCourierModal';
 import { ShiftPdfModal } from './ShiftPdfModal';
 import { formatDurationSeconds, calculateDistanceKm, PHARMACY_BASE_LOCATION } from '../../utils/geo';
+import { exportDailyOrdersToPdf } from '../../services/pdfExportService';
 
 interface Props {
   pharmacy: Pharmacy;
@@ -88,9 +90,11 @@ export const PharmacistDashboard: React.FC<Props> = ({
   const [isManagePharmaciesOpen, setIsManagePharmaciesOpen] = useState(false);
   const [isEditActivePharmacyOpen, setIsEditActivePharmacyOpen] = useState(false);
   const [isShiftPdfModalOpen, setIsShiftPdfModalOpen] = useState(false);
+  const [isExportingOrdersPdf, setIsExportingOrdersPdf] = useState(false);
   const [pdfModalSummary, setPdfModalSummary] = useState<ShiftSummaryArchive | null>(null);
   const [courierScope, setCourierScope] = useState<'branch' | 'all'>('branch');
   const [courierToDelete, setCourierToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [courierToEdit, setCourierToEdit] = useState<CourierProfile | null>(null);
   const [isDeletingCourier, setIsDeletingCourier] = useState(false);
 
   // Fast inline order entry states (قيمة فقط لسرعة العمل)
@@ -965,11 +969,20 @@ export const PharmacistDashboard: React.FC<Props> = ({
                           <Phone className="w-3.5 h-3.5" />
                         </a>
 
+                        {/* Edit Courier Button */}
+                        <button
+                          onClick={() => setCourierToEdit(courier)}
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 rounded-lg transition"
+                          title="تعديل بيانات المندوب (الاسم، الهاتف، كلمة السر، العمولة)"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+
                         {/* Delete Courier Button */}
                         <button
                           onClick={() => setCourierToDelete({ id: courier.id, name: courier.name })}
                           className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition"
-                          title="حذف المندوب"
+                          title="حذف المندوب نهائياً"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1206,13 +1219,39 @@ export const PharmacistDashboard: React.FC<Props> = ({
                 أوردرات بالقيمة والعمولة وطريقة التحصيل (سريعة بدون بيانات عميل)
               </p>
             </div>
-            <button
-              onClick={onOpenNewOrder}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5"
-            >
-              <Plus className="w-4 h-4" />
-              <span>إضافة أوردر سريع</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  if (pharmacyOrders.length === 0) return;
+                  setIsExportingOrdersPdf(true);
+                  try {
+                    await exportDailyOrdersToPdf(
+                      pharmacyOrders,
+                      pharmacy,
+                      couriers,
+                      undefined,
+                      'سجل_أوردرات_اليوم'
+                    );
+                  } finally {
+                    setIsExportingOrdersPdf(false);
+                  }
+                }}
+                disabled={isExportingOrdersPdf || pharmacyOrders.length === 0}
+                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition"
+                title="تصدير كشف وسجل أوردرات اليوم بالكامل في ملف PDF معتمد"
+              >
+                <FileText className="w-4 h-4" />
+                <span>{isExportingOrdersPdf ? 'جاري التصدير...' : 'تصدير سجل أوردرات اليوم (PDF)'}</span>
+              </button>
+
+              <button
+                onClick={onOpenNewOrder}
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition"
+              >
+                <Plus className="w-4 h-4" />
+                <span>إضافة أوردر سريع</span>
+              </button>
+            </div>
           </div>
 
           {activeOrders.length === 0 ? (
@@ -2076,6 +2115,16 @@ export const PharmacistDashboard: React.FC<Props> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Courier Details Modal */}
+      {courierToEdit && (
+        <EditCourierModal
+          isOpen={!!courierToEdit}
+          onClose={() => setCourierToEdit(null)}
+          courier={courierToEdit}
+          pharmacies={pharmacies}
+        />
       )}
     </div>
   );

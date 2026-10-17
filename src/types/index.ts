@@ -81,6 +81,8 @@ export interface Order {
   totalValueWithDelivery?: number; // إجمالي القيمة بعد تمام التوصيل (قيمة الأوردر + 7 ج)
   paymentMethod: PaymentMethod; // 'cash' | 'visa' | 'instapay'
   courierId: string;
+  courierPhone?: string;
+  courierName?: string;
   status: OrderStatus;
   createdAt: string;
   assignedAt: string;

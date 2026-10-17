@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#0f766e" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.25" />
+    </filter>
+  </defs>
+  <!-- Background with rounded corners -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  
+  <!-- Outer Glow Ring -->
+  <circle cx="256" cy="256" r="190" fill="none" stroke="#34d399" stroke-width="8" opacity="0.4" />
+  
+  <!-- Pill & Delivery Icon Graphics -->
+  <g filter="url(#shadow)" transform="translate(256, 256)">
+    <!-- Pill Capsule -->
+    <g transform="rotate(-35)">
+      <rect x="-120" y="-55" width="240" height="110" rx="55" fill="#ffffff" />
+      <path d="M 0 -55 L 65 -55 A 55 55 0 0 1 65 55 L 0 55 Z" fill="#10b981" />
+      <circle cx="-50" cy="0" r="14" fill="#059669" opacity="0.8" />
+      <circle cx="50" cy="0" r="14" fill="#ffffff" opacity="0.9" />
+      <line x1="0" y1="-55" x2="0" y2="55" stroke="#047857" stroke-width="6" />
+    </g>
+    
+    <!-- Fast Delivery Wings / Speed marks -->
+    <path d="M -150 -100 L -90 -100 L -120 -80 Z" fill="#facc15" />
+    <path d="M -170 -60 L -100 -60 L -135 -40 Z" fill="#facc15" />
+    <path d="M -150 70 L -90 70 L -120 90 Z" fill="#facc15" />
+  </g>
+  
+  <!-- Text Label -->
+  <text x="256" y="445" font-family="'Cairo', sans-serif" font-size="44" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="1">فارما ديليفري</text>
+</svg>

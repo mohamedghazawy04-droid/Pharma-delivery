@@ -23,8 +23,9 @@ import {
   BellRing,
 } from 'lucide-react';
 import { CourierProfile, Order, Pharmacy, OrderType } from '../../types';
-import { store } from '../../services/store';
+import { store, normalizePhone } from '../../services/store';
 import { LiveMap } from '../LiveMap';
+import { InstallAppBanner } from '../InstallAppBanner';
 import {
   formatDurationSeconds,
   fetchRealAddressFromCoords,
@@ -57,26 +58,40 @@ export const CourierDashboard: React.FC<Props> = ({
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isRefreshingOrders, setIsRefreshingOrders] = useState(false);
   const [newOrderBanner, setNewOrderBanner] = useState<string | null>(null);
+  const [ordersScope, setOrdersScope] = useState<'mine' | 'pharmacy'>('mine');
 
-  // Normalize courier phone for foolproof order matching
-  const normCourierPhone = courier.phone ? courier.phone.replace(/\D/g, '') : '';
+  // Normalize courier phone for foolproof order matching (supports Arabic digits & ASCII)
+  const normCourierPhone = normalizePhone(courier.phone);
 
-  // Robust order matching: By courier.id OR courier.phone OR fallback if sole courier
+  // Robust order matching: By courier.id OR courier.phone OR courier.name OR fallback if sole courier
   const isOrderForThisCourier = (o: Order) => {
     if (o.courierId === courier.id) return true;
     if (normCourierPhone) {
-      if (o.courierPhone && o.courierPhone.replace(/\D/g, '') === normCourierPhone) return true;
-      if (o.courierId && o.courierId.replace(/\D/g, '') === normCourierPhone) return true;
+      if (o.courierPhone && normalizePhone(o.courierPhone) === normCourierPhone) return true;
+      if (o.courierId && normalizePhone(o.courierId) === normCourierPhone) return true;
       if (o.courierId === `courier-${normCourierPhone}`) return true;
     }
+    if (o.courierName && courier.name && o.courierName.trim().toLowerCase() === courier.name.trim().toLowerCase()) return true;
     // If only 1 courier in this pharmacy and order belongs to this pharmacy
     if (allCouriers.length <= 1 && o.pharmacyId === pharmacy.id) return true;
+    // If only 1 courier is currently on duty in this pharmacy
+    const onDuty = allCouriers.filter((c) => c.isOnDuty);
+    if (onDuty.length === 1 && onDuty[0].id === courier.id && o.pharmacyId === pharmacy.id) return true;
     return false;
   };
 
-  // Filter and sort active unarchived orders sequentially (#1, #2, #3, ...)
+  // Filter and sort active unarchived orders assigned to this courier sequentially (#1, #2, #3, ...)
   const courierActiveOrders = orders
     .filter((o) => !o.isArchived && isOrderForThisCourier(o))
+    .sort((a, b) => {
+      const numA = parseInt(a.orderNumber.replace(/\D/g, '')) || 0;
+      const numB = parseInt(b.orderNumber.replace(/\D/g, '')) || 0;
+      return numA - numB;
+    });
+
+  // All active unarchived orders for this pharmacy (to let courier view or claim any order)
+  const pharmacyActiveOrders = orders
+    .filter((o) => !o.isArchived && o.pharmacyId === pharmacy.id)
     .sort((a, b) => {
       const numA = parseInt(a.orderNumber.replace(/\D/g, '')) || 0;
       const numB = parseInt(b.orderNumber.replace(/\D/g, '')) || 0;
@@ -97,26 +112,33 @@ export const CourierDashboard: React.FC<Props> = ({
   );
 
   const prevActiveCount = useRef(courierActiveOrders.length);
+  const prevPharmacyCount = useRef(pharmacyActiveOrders.length);
 
-  // Fast background polling every 2s so orders assigned by pharmacist appear immediately on mobile
+  // Fast background polling every 1.5s so orders assigned by pharmacist appear immediately on mobile
   useEffect(() => {
     store.fetchCloudData();
     const pollTimer = setInterval(() => {
       store.fetchCloudData();
-    }, 2000);
+    }, 1500);
     return () => clearInterval(pollTimer);
   }, [courier.id]);
 
-  // Audio & banner chime when pharmacist adds a new order to this courier
+  // Audio & banner chime when pharmacist adds a new order
   useEffect(() => {
     if (courierActiveOrders.length > prevActiveCount.current) {
       const added = courierActiveOrders.length - prevActiveCount.current;
       playCoinSound();
       setNewOrderBanner(`🔔 وصلك (${added}) أوردر جديد تم إسناده لك من الصيدلية الآن!`);
       setTimeout(() => setNewOrderBanner(null), 9000);
+    } else if (pharmacyActiveOrders.length > prevPharmacyCount.current) {
+      const added = pharmacyActiveOrders.length - prevPharmacyCount.current;
+      playCoinSound();
+      setNewOrderBanner(`🔔 تم إضافة (${added}) أوردر جديد بالصيدلية! اضغط للمشاهدة أو الاستلام.`);
+      setTimeout(() => setNewOrderBanner(null), 9000);
     }
     prevActiveCount.current = courierActiveOrders.length;
-  }, [courierActiveOrders.length]);
+    prevPharmacyCount.current = pharmacyActiveOrders.length;
+  }, [courierActiveOrders.length, pharmacyActiveOrders.length]);
 
   const isAlerting = courier.isStoppageAlertActive;
   const isStationary = courier.currentLocation.isStationary;
@@ -278,8 +300,94 @@ export const CourierDashboard: React.FC<Props> = ({
     store.updateOrderStatus(orderId, nextStatus);
   };
 
+  const handleClaimOrder = (orderId: string) => {
+    store.updateOrder(orderId, {
+      courierId: courier.id,
+      deliveryFee: courier.deliveryFeePerOrder || 7,
+    });
+    playCoinSound();
+    setNewOrderBanner(`✅ تم استتحواذ الأوردر وإسناده لكابتن ${courier.name} بنجاح!`);
+    setTimeout(() => setNewOrderBanner(null), 6000);
+  };
+
   return (
     <div className="space-y-6">
+      {/* 1-Click Mobile App Installation Banner */}
+      <InstallAppBanner
+        variant="banner"
+        title="تثبيت تطبيق فارما ديليفري على هاتفك بضغطة زر 📲"
+      />
+
+      {/* Quick Courier Selector Bar for Mobile & All Devices */}
+      {allCouriers.length > 1 && (
+        <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-3">
+            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <Bike className="w-4 h-4 text-indigo-600" />
+              <span>تبديل حساب الكابتن على هذا الجهاز ({allCouriers.length} كباتن مسجلين):</span>
+            </span>
+            <span className="text-[11px] text-slate-500">
+              اضغط على اسمك لعرض الأوردرات المسندة لك فوراً
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {allCouriers.map((c) => {
+              const isSelected = c.id === courier.id;
+              const cNorm = normalizePhone(c.phone);
+              const pendingCount = orders.filter(
+                (o) =>
+                  !o.isArchived &&
+                  (o.courierId === c.id ||
+                    (cNorm && o.courierPhone && normalizePhone(o.courierPhone) === cNorm) ||
+                    (o.courierName && o.courierName.trim().toLowerCase() === c.name.trim().toLowerCase())) &&
+                  o.status !== 'delivered'
+              ).length;
+
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => store.setCurrentCourier(c.id)}
+                  className={`p-3.5 rounded-2xl border text-right transition flex items-center justify-between gap-3 ${
+                    isSelected
+                      ? 'bg-indigo-50/90 border-indigo-500 shadow-xs ring-2 ring-indigo-500/30'
+                      : 'bg-slate-50 hover:bg-slate-100 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-2xl shrink-0">
+                      {c.vehicleType === 'دراجة' ? '🚲' : '🏍️'}
+                    </span>
+                    <div className="truncate">
+                      <strong className={`block text-xs font-extrabold truncate ${isSelected ? 'text-indigo-950 font-black' : 'text-slate-800'}`}>
+                        كابتن {c.name}
+                      </strong>
+                      <span className="text-[11px] font-mono text-slate-500 block mt-0.5">
+                        {c.phone}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-1.5">
+                    {pendingCount > 0 ? (
+                      <span className="px-2.5 py-1 bg-red-600 text-white rounded-full text-[11px] font-black animate-pulse shadow-2xs">
+                        {pendingCount} أوردر
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-slate-200 text-slate-600 rounded-md text-[10px] font-bold">
+                        0 أوردر
+                      </span>
+                    )}
+                    {isSelected && (
+                      <span className="text-indigo-600 text-sm font-black mr-1">✓</span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Offline Alert Banner (حفظ كامل للبيانات بدون إنترنت) */}
       {!isDeviceOnline && (
         <div className="p-4 bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 text-white rounded-3xl flex items-center gap-3.5 shadow-lg border-2 border-amber-400 animate-pulse">
@@ -606,12 +714,12 @@ export const CourierDashboard: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Tabs Switcher: Orders vs Map */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center p-1 bg-slate-200/70 rounded-2xl text-xs font-bold">
+      {/* Tabs Switcher: Current Orders vs Daily Orders History vs Map */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="flex items-center p-1 bg-slate-200/70 rounded-2xl text-xs font-bold overflow-x-auto">
           <button
             onClick={() => setActiveTab('orders')}
-            className={`py-2 px-4 rounded-xl transition ${
+            className={`py-2 px-3.5 sm:px-4 rounded-xl transition shrink-0 ${
               activeTab === 'orders'
                 ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -620,8 +728,18 @@ export const CourierDashboard: React.FC<Props> = ({
             أوردراتي الحالية ({pendingOrders.length})
           </button>
           <button
+            onClick={() => setActiveTab('history')}
+            className={`py-2 px-3.5 sm:px-4 rounded-xl transition shrink-0 ${
+              activeTab === 'history'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            سجل أوردرات اليوم ({courierDailyOrders.length})
+          </button>
+          <button
             onClick={() => setActiveTab('map')}
-            className={`py-2 px-4 rounded-xl transition ${
+            className={`py-2 px-3.5 sm:px-4 rounded-xl transition shrink-0 ${
               activeTab === 'map'
                 ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -630,27 +748,139 @@ export const CourierDashboard: React.FC<Props> = ({
             خريطة التوصيل المباشرة
           </button>
         </div>
+
+        {/* Action buttons: Instant cloud sync & PDF export */}
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          <button
+            onClick={async () => {
+              setIsRefreshingOrders(true);
+              await store.fetchCloudData();
+              setTimeout(() => setIsRefreshingOrders(false), 600);
+            }}
+            className="flex items-center gap-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition shadow-2xs"
+            title="سحب أحدث الأوردرات من السيرفر فوراً"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingOrders ? 'animate-spin text-emerald-600' : ''}`} />
+            <span>تحديث فوري</span>
+          </button>
+
+          <button
+            onClick={async () => {
+              if (courierDailyOrders.length === 0) return;
+              setIsExportingPdf(true);
+              try {
+                await exportDailyOrdersToPdf(
+                  courierDailyOrders,
+                  pharmacy,
+                  allCouriers,
+                  courier,
+                  `سجل_اوردرات_${courier.name.replace(/\s+/g, '_')}`
+                );
+              } finally {
+                setIsExportingPdf(false);
+              }
+            }}
+            disabled={isExportingPdf || courierDailyOrders.length === 0}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-xl text-xs font-bold shadow-xs transition"
+            title="تصدير كشف أوردرات اليوم كامل في ملف PDF"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>{isExportingPdf ? 'جاري التصدير...' : 'تصدير سجل اليوم PDF'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Orders List (قيمة فقط مع تحديث فوري) */}
       {activeTab === 'orders' && (
         <div className="space-y-4">
-          {courierActiveOrders.length === 0 ? (
+          {/* Orders Scope Toggle: My Assigned Orders vs All Pharmacy Orders */}
+          <div className="flex flex-wrap items-center justify-between gap-2 p-1.5 bg-slate-200/80 rounded-2xl">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setOrdersScope('mine')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5 ${
+                  ordersScope === 'mine'
+                    ? 'bg-white text-indigo-950 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>أوردراتي المسندة لي ({courierActiveOrders.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrdersScope('pharmacy')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5 ${
+                  ordersScope === 'pharmacy'
+                    ? 'bg-white text-indigo-950 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>كافة أوردرات الصيدلية ({pharmacyActiveOrders.length})</span>
+                {pharmacyActiveOrders.length > courierActiveOrders.length && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                )}
+              </button>
+            </div>
+            <div className="text-[11px] text-slate-500 font-bold px-2">
+              {ordersScope === 'mine' ? `أوردرات كابتن ${courier.name}` : `جميع أوردرات ${pharmacy.name}`}
+            </div>
+          </div>
+
+          {/* Alert if courier has 0 orders but pharmacy has pending orders */}
+          {ordersScope === 'mine' && courierActiveOrders.length === 0 && pharmacyActiveOrders.length > 0 && (
+            <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-3xl text-amber-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl shrink-0">🔔</span>
+                <div>
+                  <strong className="text-xs sm:text-sm block font-extrabold text-amber-900">
+                    يوجد ({pharmacyActiveOrders.length}) أوردر نشط في الصيدلية متاح للتوصيل!
+                  </strong>
+                  <span className="text-[11px] text-amber-800">
+                    الأوردرات مسندة لكباتن آخرين أو مسجلة حديثاً. يمكنك استلام أي أوردر منها فوراً لحسابك لتوصيله أو تبديل الكابتن من الأعلى.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOrdersScope('pharmacy')}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-xs transition shrink-0"
+              >
+                عرض واستلام أوردرات الصيدلية 📥
+              </button>
+            </div>
+          )}
+
+          {/* Orders Empty State */}
+          {((ordersScope === 'mine' && courierActiveOrders.length === 0) ||
+            (ordersScope === 'pharmacy' && pharmacyActiveOrders.length === 0)) ? (
             <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-xs space-y-3">
               <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center mx-auto text-3xl">
                 ✨
               </div>
               <h3 className="text-lg font-extrabold text-slate-800">
-                الصفحة فارغة وجاهزة لاستقبال أوردرات جديدة!
+                {ordersScope === 'mine'
+                  ? `لا توجد أوردرات مسندة لكابتن ${courier.name} حالياً`
+                  : 'لا توجد أوردرات نشطة في الصيدلية حالياً'}
               </h3>
               <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
-                قام الصيدلي بحفظ وأرشفة الأوردرات السابقة سحابياً. أرباحك وعمولاتك محفوظة بأمان في الحصالة، وبمجرد إسناد أوردر جديد سيظهر لك هنا فوراً.
+                بمجرد إضافة الصيدلي لأي أوردر جديد سيظهر هنا فوراً على هاتفك في نفس اللحظة عبر المزامنة الحية.
               </p>
+              {ordersScope === 'mine' && pharmacyActiveOrders.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setOrdersScope('pharmacy')}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-xs mt-2"
+                >
+                  مشاهدة كافة أوردرات الصيدلية ({pharmacyActiveOrders.length})
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {courierActiveOrders.map((order) => {
+              {(ordersScope === 'pharmacy' ? pharmacyActiveOrders : courierActiveOrders).map((order) => {
                 const isDelivered = order.status === 'delivered';
+                const isMine = isOrderForThisCourier(order);
 
                 return (
                   <div
@@ -658,6 +888,8 @@ export const CourierDashboard: React.FC<Props> = ({
                     className={`bg-white rounded-3xl p-5 border transition-all ${
                       isDelivered
                         ? 'border-emerald-200 bg-emerald-50/20'
+                        : !isMine
+                        ? 'border-indigo-300 bg-indigo-50/20 shadow-xs'
                         : order.updatedAt
                         ? 'border-amber-400 shadow-md ring-2 ring-amber-300/60'
                         : 'border-slate-200 shadow-xs hover:border-slate-300'
@@ -673,6 +905,22 @@ export const CourierDashboard: React.FC<Props> = ({
                             minute: '2-digit',
                           })}
                         </span>
+                      </div>
+                    )}
+
+                    {/* Ownership badge if assigned to another courier */}
+                    {!isMine && !isDelivered && (
+                      <div className="mb-2 p-2 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between gap-2 text-xs">
+                        <span className="text-indigo-900 font-bold">
+                          مسند حالياً إلى: <strong>{order.courierName || 'كابتن آخر'}</strong>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleClaimOrder(order.id)}
+                          className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-black transition"
+                        >
+                          استلام لحسابي 📥
+                        </button>
                       </div>
                     )}
 
@@ -774,14 +1022,28 @@ export const CourierDashboard: React.FC<Props> = ({
 
                     {/* Step Actions */}
                     <div className="pt-2 border-t border-slate-100 space-y-2">
-                      {!isDelivered && (
+                      {!isDelivered && isMine && (
                         <button
+                          type="button"
                           onClick={() => handleUpdateStatus(order.id, 'delivered')}
                           className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black shadow-md transition flex items-center justify-center gap-2"
                         >
                           <CheckCircle className="w-4 h-4" />
                           <span>
                             اضغط لتأكيد تمام الأوردر والتسليم (+7 جنيه لحصالتك فوراً)
+                          </span>
+                        </button>
+                      )}
+
+                      {!isDelivered && !isMine && (
+                        <button
+                          type="button"
+                          onClick={() => handleClaimOrder(order.id)}
+                          className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black shadow-md transition flex items-center justify-center gap-2"
+                        >
+                          <Check className="w-4 h-4" />
+                          <span>
+                            استلام هذا الأوردر وتوصيله باسمي (+7 ج لحصالتك فوراً) 📥
                           </span>
                         </button>
                       )}
@@ -798,6 +1060,137 @@ export const CourierDashboard: React.FC<Props> = ({
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Daily Orders History Tab (سجل الأوردرات اليومي المحفوظ) */}
+      {activeTab === 'history' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-emerald-600" />
+                  <span>سجل أوردرات اليوم المحفوظة للكابتن ({courier.name})</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  السجل محفوظ تلقائياً ولا يحذف مع إغلاق الشاشة، وجاهز للتصدير كملف PDF رسمي بأي وقت.
+                </p>
+              </div>
+
+              <button
+                onClick={async () => {
+                  if (courierDailyOrders.length === 0) return;
+                  setIsExportingPdf(true);
+                  try {
+                    await exportDailyOrdersToPdf(
+                      courierDailyOrders,
+                      pharmacy,
+                      allCouriers,
+                      courier,
+                      `سجل_اوردرات_${courier.name.replace(/\s+/g, '_')}`
+                    );
+                  } finally {
+                    setIsExportingPdf(false);
+                  }
+                }}
+                disabled={isExportingPdf || courierDailyOrders.length === 0}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition"
+              >
+                <Download className="w-4 h-4" />
+                <span>{isExportingPdf ? 'جاري التصدير...' : 'تحميل سجل الأوردرات كملف PDF'}</span>
+              </button>
+            </div>
+
+            {courierDailyOrders.length === 0 ? (
+              <div className="py-12 text-center text-slate-400">
+                <Package className="w-12 h-12 mx-auto text-slate-300 mb-2" />
+                <p className="text-sm font-bold text-slate-600">لا توجد أوردرات مسجلة لك حتى الآن اليوم</p>
+                <p className="text-xs text-slate-400 mt-1">بمجرد إضافة أوردر جديد لك من الصيدلية سيتم حفظه وتوثيقه هنا فوراً</p>
+              </div>
+            ) : (
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                      <th className="py-3 px-3 font-bold">#</th>
+                      <th className="py-3 px-3 font-bold">رقم الأوردر</th>
+                      <th className="py-3 px-3 font-bold">وقت الإسناد</th>
+                      <th className="py-3 px-3 font-bold">النوع</th>
+                      <th className="py-3 px-3 font-bold">قيمة الأوردر</th>
+                      <th className="py-3 px-3 font-bold">عمولة التوصيل</th>
+                      <th className="py-3 px-3 font-bold">طريقة الدفع</th>
+                      <th className="py-3 px-3 font-bold">الحالة</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {courierDailyOrders.map((ord, idx) => {
+                      const isDelivered = ord.status === 'delivered';
+                      return (
+                        <tr key={ord.id} className="hover:bg-slate-50/80 transition">
+                          <td className="py-3 px-3 text-slate-400 font-mono font-bold">{idx + 1}</td>
+                          <td className="py-3 px-3 font-mono font-black text-slate-900">{ord.orderNumber}</td>
+                          <td className="py-3 px-3 text-slate-500 font-mono text-[11px]">
+                            {ord.createdAt
+                              ? new Date(ord.createdAt).toLocaleTimeString('ar-EG', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : '--:--'}
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md font-bold text-[10px]">
+                              {ord.orderType || 'عادي'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 font-mono font-black text-slate-900">
+                            {ord.orderValue} ج
+                          </td>
+                          <td className="py-3 px-3 font-mono font-bold text-amber-700">
+                            +{ord.deliveryFee || 7} ج
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
+                              ord.paymentMethod === 'cash'
+                                ? 'bg-emerald-50 text-emerald-800'
+                                : ord.paymentMethod === 'visa'
+                                ? 'bg-purple-50 text-purple-800'
+                                : 'bg-sky-50 text-sky-800'
+                            }`}>
+                              {ord.paymentMethod === 'cash' ? '💵 كاش' : ord.paymentMethod === 'visa' ? '💳 فيزا' : '⚡ انستاباي'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] inline-flex items-center gap-1 ${
+                              isDelivered
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {isDelivered ? '✅ تم التسليم' : '🚴 قيد التوصيل'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-50 font-bold border-t-2 border-slate-200">
+                      <td colSpan={4} className="py-3 px-3 text-slate-700">الإجمالي:</td>
+                      <td className="py-3 px-3 font-mono font-black text-slate-900">
+                        {courierDailyOrders.reduce((sum, o) => sum + (Number(o.orderValue) || 0), 0)} ج
+                      </td>
+                      <td className="py-3 px-3 font-mono font-black text-amber-700">
+                        +{courierDailyOrders.reduce((sum, o) => sum + (Number(o.deliveryFee) || 7), 0)} ج
+                      </td>
+                      <td colSpan={2} className="py-3 px-3 text-slate-500 text-[11px]">
+                        ({courierDailyOrders.filter(o => o.status === 'delivered').length} أوردرات منجزة)
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

@@ -48,7 +48,13 @@ export function normalizeDigits(str: string): string {
     .trim();
 }
 
-interface AppState {
+// Normalize phone numbers thoroughly (Arabic/ASCII digits stripped to numbers only)
+export function normalizePhone(str: string): string {
+  if (!str) return '';
+  return normalizeDigits(str).replace(/\D/g, '');
+}
+
+export interface AppState {
   role: UserRole;
   activePharmacyId: string;
   currentCourierId: string;
@@ -58,6 +64,7 @@ interface AppState {
   shiftSummaries: ShiftSummaryArchive[];
   authenticatedAsPharmacist: boolean;
   authenticatedCourierId: string | null;
+  deletedCourierIds?: string[];
 }
 
 // Clean initial pharmacies with user pharmacy صيدليه الديب as the SOLE real pharmacy
@@ -180,24 +187,27 @@ function loadInitialState(): AppState {
           ? 'courier'
           : 'pharmacist';
 
-        let restoredCouriers: CourierProfile[] = parsed.couriers || [];
-        if (finalCourierAuthId && !restoredCouriers.some((c) => c.id === finalCourierAuthId)) {
+        const savedDeletedIds = Array.isArray(parsed.deletedCourierIds)
+          ? parsed.deletedCourierIds
+          : [];
+        const deletedSet = new Set<string>(savedDeletedIds);
+
+        let restoredCouriers: CourierProfile[] = (parsed.couriers || []).filter(
+          (c: any) => c && c.id && !deletedSet.has(c.id)
+        );
+
+        if (finalCourierAuthId && !deletedSet.has(finalCourierAuthId) && !restoredCouriers.some((c: any) => c.id === finalCourierAuthId)) {
           try {
             const rawSavedProfile =
               localStorage.getItem(`pharma_courier_profile_${finalCourierAuthId}`) ||
               localStorage.getItem('pharma_last_logged_courier');
             if (rawSavedProfile) {
               const savedCourierObj = JSON.parse(rawSavedProfile);
-              if (savedCourierObj && savedCourierObj.id) {
+              if (savedCourierObj && savedCourierObj.id && !deletedSet.has(savedCourierObj.id)) {
                 restoredCouriers = [savedCourierObj, ...restoredCouriers];
               }
             }
           } catch (e) {}
-        }
-
-        // Guarantee courier with phone 01000321253 exists
-        if (!restoredCouriers.some((c) => c.phone === '01000321253' || c.id === 'courier-01000321253')) {
-          restoredCouriers.push(DEFAULT_COURIER_01000321253);
         }
 
         return {
@@ -214,6 +224,7 @@ function loadInitialState(): AppState {
             : savedPharmaAuth
             ? null
             : finalCourierAuthId,
+          deletedCourierIds: savedDeletedIds,
         };
       }
     }
@@ -274,6 +285,7 @@ class Store {
   private state: AppState;
   private listeners: Set<() => void> = new Set();
   private syncChannel: BroadcastChannel | null = null;
+  private eventSource: EventSource | null = null;
   private tickerInterval: number | null = null;
   private cloudPollInterval: number | null = null;
   private lastCloudTimestamp = '';
@@ -287,6 +299,7 @@ class Store {
     });
 
     this.initSyncChannel();
+    this.initEventSource();
     this.startRealStoppageTicker();
     this.fetchCloudData();
     this.startCloudPolling();
@@ -339,11 +352,116 @@ class Store {
     }
   }
 
+  // Real-time Server-Sent Events (SSE) stream for instant mobile push
+  private initEventSource() {
+    if (typeof window === 'undefined' || typeof EventSource === 'undefined') return;
+    try {
+      if (this.eventSource) {
+        this.eventSource.close();
+      }
+      this.eventSource = new EventSource('/api/events');
+      this.eventSource.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload && (payload.type === 'SYNC' || payload.type === 'INIT') && payload.data) {
+            this.applyIncomingCloudData(payload.data);
+          }
+        } catch {}
+      };
+      this.eventSource.onerror = () => {
+        // SSE automatically reconnects; fast background polling also continues
+      };
+    } catch {}
+  }
+
+  // Centralized helper to apply server / cloud data to client state cleanly
+  public applyIncomingCloudData(cloudData: any) {
+    if (!cloudData) return;
+    const rawServerPharmacies: Pharmacy[] = Array.isArray(cloudData.pharmacies)
+      ? cloudData.pharmacies
+      : [];
+    const cleanPharmacies = rawServerPharmacies.filter(
+      (p) => p && p.id !== 'pharma-branch-2' && !p.name.includes('النور والشفاء')
+    );
+    const serverPharmacies: Pharmacy[] =
+      cleanPharmacies.length > 0 ? cleanPharmacies : DEFAULT_INITIAL_PHARMACIES;
+
+    if (serverPharmacies.length > 0) {
+      const activeStillExists = serverPharmacies.some(
+        (p) => p.id === this.state.activePharmacyId
+      );
+
+      // Ingest incoming couriers with real-time new courier alert
+      if (Array.isArray(cloudData.couriers)) {
+        this.handleIncomingCouriers(cloudData.couriers);
+      }
+
+      // Detect newly delivered orders from cloud polling/SSE
+      if (Array.isArray(cloudData.orders)) {
+        const incomingOrders: Order[] = cloudData.orders;
+        incomingOrders.forEach((cloudOrd) => {
+          if (cloudOrd.status === 'delivered') {
+            const prev = this.state.orders.find((p) => p.id === cloudOrd.id);
+            if (prev && prev.status !== 'delivered') {
+              const courier = (cloudData.couriers || this.state.couriers).find(
+                (c: any) => c.id === cloudOrd.courierId
+              );
+              const pharmacy = (serverPharmacies || this.state.pharmacies).find(
+                (p: any) => p.id === cloudOrd.pharmacyId
+              );
+              notificationService.notifyOrderDelivered({
+                order: cloudOrd,
+                courier,
+                pharmacy,
+              });
+            }
+          }
+        });
+      }
+
+      const combinedDeleted = new Set<string>([
+        ...(this.state.deletedCourierIds || []),
+        ...(Array.isArray(cloudData.deletedCourierIds) ? cloudData.deletedCourierIds : []),
+      ]);
+
+      const filteredLocalCouriers = (this.state.couriers || []).filter(
+        (c) => c && c.id && !combinedDeleted.has(c.id)
+      );
+      const incomingCouriers = (Array.isArray(cloudData.couriers) ? cloudData.couriers : []).filter(
+        (c: any) => c && c.id && !combinedDeleted.has(c.id)
+      );
+
+      this.state = {
+        ...this.state,
+        pharmacies: serverPharmacies,
+        couriers: mergeById(filteredLocalCouriers, incomingCouriers),
+        orders: Array.isArray(cloudData.orders)
+          ? mergeById(this.state.orders, cloudData.orders)
+          : this.state.orders,
+        shiftSummaries: Array.isArray(cloudData.shiftSummaries)
+          ? cloudData.shiftSummaries
+          : this.state.shiftSummaries,
+        deletedCourierIds: Array.from(combinedDeleted),
+        activePharmacyId: activeStillExists
+          ? this.state.activePharmacyId
+          : serverPharmacies[0]?.id || 'pharma-main',
+      };
+
+      this.lastCloudTimestamp = cloudData.lastUpdated || '';
+
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+      } catch {}
+
+      this.listeners.forEach((listener) => listener());
+    }
+  }
+
   // Real-time synchronization via Cloud Firestore (synchronizes preview and web page globally)
   private initFirestoreSync() {
     if (typeof window === 'undefined' || !db) return;
 
-    // 1. Listen to individual couriers collection for instant multi-device registration sync
+    // 1. Listen to individual couriers collection
     try {
       const couriersColRef = collection(db, 'couriers');
       onSnapshot(
@@ -359,15 +477,38 @@ class Store {
             this.handleIncomingCouriers(incoming);
           }
         },
-        (error) => {
-          console.warn('Firestore couriers collection onSnapshot:', error);
-        }
+        () => {}
       );
-    } catch (err) {
-      console.warn('Failed to listen to couriers collection:', err);
-    }
+    } catch {}
 
-    // 2. Listen to system cloud state
+    // 2. Listen to individual orders collection for immediate multi-device order arrivals
+    try {
+      const ordersColRef = collection(db, 'orders');
+      onSnapshot(
+        ordersColRef,
+        (snapshot) => {
+          const incomingOrders: Order[] = [];
+          snapshot.forEach((docSnap) => {
+            if (docSnap.exists()) {
+              incomingOrders.push(docSnap.data() as Order);
+            }
+          });
+          if (incomingOrders.length > 0) {
+            this.state = {
+              ...this.state,
+              orders: mergeById(this.state.orders, incomingOrders),
+            };
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+            } catch {}
+            this.listeners.forEach((listener) => listener());
+          }
+        },
+        () => {}
+      );
+    } catch {}
+
+    // 3. Listen to system cloud state
     try {
       const stateDocRef = doc(db, 'system', 'cloud_state');
       onSnapshot(
@@ -375,72 +516,7 @@ class Store {
         (snapshot) => {
           if (snapshot.exists()) {
             const cloudData = snapshot.data();
-            if (
-              cloudData &&
-              Array.isArray(cloudData.pharmacies) &&
-              cloudData.pharmacies.length > 0
-            ) {
-              const rawPharmacies: Pharmacy[] = cloudData.pharmacies;
-              const cleanPharmacies = rawPharmacies.filter(
-                (p) => p && p.id !== 'pharma-branch-2' && !p.name.includes('النور والشفاء')
-              );
-              const incomingPharmacies: Pharmacy[] =
-                cleanPharmacies.length > 0 ? cleanPharmacies : DEFAULT_INITIAL_PHARMACIES;
-              const activeStillExists = incomingPharmacies.some(
-                (p) => p.id === this.state.activePharmacyId
-              );
-
-              // Process couriers from cloudData
-              if (Array.isArray(cloudData.couriers)) {
-                this.handleIncomingCouriers(cloudData.couriers);
-              }
-
-              // Check for newly delivered orders to notify
-              if (Array.isArray(cloudData.orders)) {
-                const incomingOrders: Order[] = cloudData.orders;
-                incomingOrders.forEach((cloudOrd) => {
-                  if (cloudOrd.status === 'delivered') {
-                    const prev = this.state.orders.find((p) => p.id === cloudOrd.id);
-                    if (prev && prev.status !== 'delivered') {
-                      const courier = (cloudData.couriers || this.state.couriers).find(
-                        (c: any) => c.id === cloudOrd.courierId
-                      );
-                      const pharmacy = (incomingPharmacies || this.state.pharmacies).find(
-                        (p: any) => p.id === cloudOrd.pharmacyId
-                      );
-                      notificationService.notifyOrderDelivered({
-                        order: cloudOrd,
-                        courier,
-                        pharmacy,
-                      });
-                    }
-                  }
-                });
-              }
-
-              this.state = {
-                ...this.state,
-                pharmacies: incomingPharmacies,
-                couriers: Array.isArray(cloudData.couriers)
-                  ? mergeById(this.state.couriers, cloudData.couriers)
-                  : this.state.couriers,
-                orders: Array.isArray(cloudData.orders)
-                  ? cloudData.orders
-                  : this.state.orders,
-                shiftSummaries: Array.isArray(cloudData.shiftSummaries)
-                  ? cloudData.shiftSummaries
-                  : this.state.shiftSummaries,
-                activePharmacyId: activeStillExists
-                  ? this.state.activePharmacyId
-                  : incomingPharmacies[0]?.id || 'pharma-main',
-              };
-
-              try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
-              } catch (e) {}
-
-              this.listeners.forEach((listener) => listener());
-            }
+            this.applyIncomingCloudData(cloudData);
           } else {
             // Document not yet created: seed it with current state
             setDoc(stateDocRef, {
@@ -449,16 +525,12 @@ class Store {
               orders: this.state.orders,
               shiftSummaries: this.state.shiftSummaries,
               lastUpdated: new Date().toISOString(),
-            }).catch((err) => console.warn('Firestore seeding error:', err));
+            }).catch(() => {});
           }
         },
-        (error) => {
-          console.warn('Firestore onSnapshot listener error:', error);
-        }
+        () => {}
       );
-    } catch (err) {
-      console.warn('Failed to initialize Firestore sync:', err);
-    }
+    } catch {}
   }
 
   private initSyncChannel() {
@@ -531,74 +603,7 @@ class Store {
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data) {
-          const cloudData = json.data;
-          const rawServerPharmacies: Pharmacy[] = Array.isArray(cloudData.pharmacies)
-            ? cloudData.pharmacies
-            : [];
-          const cleanPharmacies = rawServerPharmacies.filter(
-            (p) => p && p.id !== 'pharma-branch-2' && !p.name.includes('النور والشفاء')
-          );
-          const serverPharmacies: Pharmacy[] =
-            cleanPharmacies.length > 0 ? cleanPharmacies : DEFAULT_INITIAL_PHARMACIES;
-
-          if (serverPharmacies.length > 0) {
-            const activeStillExists = serverPharmacies.some(
-              (p) => p.id === this.state.activePharmacyId
-            );
-
-            // Ingest incoming couriers with real-time new courier alert
-            if (Array.isArray(cloudData.couriers)) {
-              this.handleIncomingCouriers(cloudData.couriers);
-            }
-
-            // Detect newly delivered orders from cloud polling
-            if (Array.isArray(cloudData.orders)) {
-              const incomingOrders: Order[] = cloudData.orders;
-              incomingOrders.forEach((cloudOrd) => {
-                if (cloudOrd.status === 'delivered') {
-                  const prev = this.state.orders.find((p) => p.id === cloudOrd.id);
-                  if (prev && prev.status !== 'delivered') {
-                    const courier = (cloudData.couriers || this.state.couriers).find(
-                      (c: any) => c.id === cloudOrd.courierId
-                    );
-                    const pharmacy = (serverPharmacies || this.state.pharmacies).find(
-                      (p: any) => p.id === cloudOrd.pharmacyId
-                    );
-                    notificationService.notifyOrderDelivered({
-                      order: cloudOrd,
-                      courier,
-                      pharmacy,
-                    });
-                  }
-                }
-              });
-            }
-
-            this.state = {
-              ...this.state,
-              pharmacies: serverPharmacies,
-              couriers: Array.isArray(cloudData.couriers)
-                ? mergeById(this.state.couriers, cloudData.couriers)
-                : this.state.couriers,
-              orders: Array.isArray(cloudData.orders)
-                ? mergeById(this.state.orders, cloudData.orders)
-                : this.state.orders,
-              shiftSummaries: Array.isArray(cloudData.shiftSummaries)
-                ? cloudData.shiftSummaries
-                : this.state.shiftSummaries,
-              activePharmacyId: activeStillExists
-                ? this.state.activePharmacyId
-                : serverPharmacies[0]?.id || 'pharma-main',
-            };
-
-            this.lastCloudTimestamp = cloudData.lastUpdated || '';
-
-            try {
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
-            } catch (e) {}
-
-            this.listeners.forEach((listener) => listener());
-          }
+          this.applyIncomingCloudData(json.data);
         }
       }
     } catch (err) {
@@ -611,7 +616,7 @@ class Store {
     if (this.cloudPollInterval) return;
     this.cloudPollInterval = window.setInterval(() => {
       this.fetchCloudData();
-    }, 1500);
+    }, 1000);
   }
 
   // Send updates to cloud server
@@ -625,6 +630,7 @@ class Store {
           couriers: this.state.couriers,
           orders: this.state.orders,
           shiftSummaries: this.state.shiftSummaries,
+          deletedCourierIds: this.state.deletedCourierIds,
         }),
       });
     } catch (err) {
@@ -645,6 +651,11 @@ class Store {
           },
           { merge: true }
         ).catch(() => {});
+
+        // Save active orders to individual orders collection
+        this.state.orders.forEach((o) => {
+          setDoc(doc(db, 'orders', o.id), o, { merge: true }).catch(() => {});
+        });
       }
     } catch (e) {
       // Offline fallback
@@ -1949,21 +1960,48 @@ class Store {
     return newCourier;
   }
 
-  // Delete courier permanently
+  // Delete courier permanently (with tombstoning so it never resurrects)
   public async deleteCourier(courierId: string): Promise<boolean> {
     const courierToDelete = this.state.couriers.find((c) => c.id === courierId);
     if (!courierToDelete) return false;
 
-    // Remove from in-memory state
+    // Track in tombstone list
+    const deletedSet = new Set<string>(this.state.deletedCourierIds || []);
+    deletedSet.add(courierId);
     this.knownCourierIds.delete(courierId);
+
+    // Remove from in-memory state and unassign associated active orders
     this.state = {
       ...this.state,
       couriers: this.state.couriers.filter((c) => c.id !== courierId),
-      orders: this.state.orders.filter((o) => o.courierId !== courierId),
+      orders: this.state.orders.map((o) =>
+        o.courierId === courierId
+          ? { ...o, courierId: '', courierName: '', courierPhone: '' }
+          : o
+      ),
+      deletedCourierIds: Array.from(deletedSet),
       currentCourierId:
         this.state.currentCourierId === courierId ? '' : this.state.currentCourierId,
+      authenticatedCourierId:
+        this.state.authenticatedCourierId === courierId ? null : this.state.authenticatedCourierId,
     };
-    this.notify(true);
+
+    // Remove cached courier items from localStorage
+    try {
+      localStorage.removeItem(`pharma_courier_profile_${courierId}`);
+      if (localStorage.getItem('pharma_courier_auth_id') === courierId) {
+        localStorage.removeItem('pharma_courier_auth_id');
+      }
+      const rawLast = localStorage.getItem('pharma_last_logged_courier');
+      if (rawLast) {
+        const last = JSON.parse(rawLast);
+        if (last && last.id === courierId) {
+          localStorage.removeItem('pharma_last_logged_courier');
+        }
+      }
+    } catch (e) {}
+
+    this.notify(true, true);
 
     // Call server delete API
     try {
@@ -1983,6 +2021,70 @@ class Store {
       }
     } catch (e) {
       console.warn('Firestore deleteDoc fallback:', e);
+    }
+
+    return true;
+  }
+
+  // Update courier profile permanently (اسم، هاتف، كلمة مرور، عمولة، صيدلية)
+  public async updateCourier(
+    courierId: string,
+    updates: Partial<CourierProfile>
+  ): Promise<boolean> {
+    const courier = this.state.couriers.find((c) => c.id === courierId);
+    if (!courier) return false;
+
+    const updatedCouriers = this.state.couriers.map((c) => {
+      if (c.id === courierId) {
+        return {
+          ...c,
+          ...updates,
+          phone: updates.phone ? updates.phone.trim() : c.phone,
+          name: updates.name ? updates.name.trim() : c.name,
+        };
+      }
+      return c;
+    });
+
+    this.state = {
+      ...this.state,
+      couriers: updatedCouriers,
+    };
+
+    // Update active courier cache if matched
+    try {
+      const updatedCourierObj = updatedCouriers.find((c) => c.id === courierId);
+      if (updatedCourierObj) {
+        localStorage.setItem(
+          `pharma_courier_profile_${courierId}`,
+          JSON.stringify(updatedCourierObj)
+        );
+        if (localStorage.getItem('pharma_courier_auth_id') === courierId) {
+          localStorage.setItem('pharma_last_logged_courier', JSON.stringify(updatedCourierObj));
+        }
+      }
+    } catch (e) {}
+
+    this.notify(true, true);
+
+    // Call server update API
+    try {
+      await fetch('/api/courier/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courierId, updates }),
+      });
+    } catch (e) {
+      console.warn('Server update courier fallback:', e);
+    }
+
+    // Update in Firestore
+    try {
+      if (typeof window !== 'undefined' && db) {
+        await setDoc(doc(db, 'couriers', courierId), updates, { merge: true });
+      }
+    } catch (e) {
+      console.warn('Firestore update courier fallback:', e);
     }
 
     return true;

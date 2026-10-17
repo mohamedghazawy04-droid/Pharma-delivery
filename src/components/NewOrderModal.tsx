@@ -255,7 +255,7 @@ export const NewOrderModal: React.FC<Props> = ({
               >
                 {couriers.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name} ({c.vehicleType}) - عمولة: {c.deliveryFeePerOrder} ج
+                    كابتن {c.name} ({c.phone || c.vehicleType}) - عمولة: {c.deliveryFeePerOrder} ج
                   </option>
                 ))}
               </select>

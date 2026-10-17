@@ -29,31 +29,32 @@
       "nationalId": "",
       "isOnDuty": true,
       "currentLocation": {
-        "lat": 29.97056,
-        "lng": 30.89801,
-        "address": "الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب",
-        "speedKmH": 0,
-        "lastMovedTimestamp": 1791738500000,
         "isStationary": true,
-        "stationarySeconds": 0,
+        "isGpsLive": true,
+        "lastMovedTimestamp": 1791738500000,
+        "lng": 30.89801,
+        "lat": 29.97056,
         "accuracy": 15,
-        "isGpsLive": true
+        "speedKmH": 0,
+        "address": "الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب",
+        "stationarySeconds": 931
       },
       "shift": {
-        "startTime": "2026-10-11T16:00:00.000Z",
         "isEnded": false,
-        "totalOrdersDelivered": 0,
-        "totalDeliveryEarnings": 0,
+        "startTime": "2026-10-11T16:00:00.000Z",
+        "totalCollectedInstapay": 0,
         "totalCollectedCash": 0,
         "totalCollectedVisa": 0,
-        "totalCollectedInstapay": 0
+        "totalOrdersDelivered": 0,
+        "totalDeliveryEarnings": 0
       },
       "isStoppageAlertActive": false,
-      "stoppageAlertAcknowledged": false,
+      "stoppageAlertAcknowledged": true,
       "createdAt": "2026-10-11T16:00:00.000Z",
       "isInternetOnline": true,
-      "offlineSeconds": 0,
-      "lastSeenTimestamp": 1791738500000
+      "offlineSeconds": 51,
+      "lastSeenTimestamp": 1792219141037,
+      "isOfflineAlertActive": false
     },
     {
       "id": "courier-1791556934998-961",
@@ -68,33 +69,33 @@
       "isOnDuty": true,
       "currentLocation": {
         "isGpsLive": true,
-        "altitude": 180,
-        "isStationary": false,
+        "altitude": 186,
+        "lastGpsUpdate": "2026-10-10T08:37:39.669Z",
+        "address": "إسكان المستقبل، مساكن أبناء الجيزة، السادس من أكتوبر",
+        "accuracy": 10,
+        "speedKmH": 25,
+        "heading": 350.3724365234375,
         "stationarySeconds": 0,
-        "lastMovedTimestamp": 1791735853372,
-        "heading": 196.4512481689453,
-        "lastGpsUpdate": "2026-10-11T16:24:13.372Z",
-        "accuracy": 35,
-        "lat": 29.9752109,
-        "lng": 30.9008298,
-        "speedKmH": 11,
-        "address": "الحى العاشر، الحى الحادى عشر، السادس من أكتوبر"
+        "isStationary": false,
+        "lastMovedTimestamp": 1791815905164,
+        "lat": 29.921255,
+        "lng": 30.932768
       },
       "shift": {
-        "isEnded": false,
-        "totalDeliveryEarnings": 0,
-        "totalCollectedInstapay": 0,
         "totalOrdersDelivered": 0,
-        "totalCollectedVisa": 0,
+        "totalDeliveryEarnings": 0,
         "totalCollectedCash": 0,
-        "startTime": "2026-10-09T14:42:14.999Z"
+        "totalCollectedVisa": 0,
+        "startTime": "2026-10-09T14:42:14.999Z",
+        "isEnded": false,
+        "totalCollectedInstapay": 0
       },
       "isStoppageAlertActive": false,
       "stoppageAlertAcknowledged": false,
       "createdAt": "2026-10-09T14:42:14.999Z",
       "isOfflineAlertActive": false,
-      "offlineSeconds": 97,
-      "lastSeenTimestamp": 1791738360893,
+      "offlineSeconds": 55,
+      "lastSeenTimestamp": 1792219137055,
       "isInternetOnline": true
     },
     {
@@ -109,34 +110,34 @@
       "nationalId": "",
       "isOnDuty": true,
       "currentLocation": {
+        "accuracy": 25,
+        "speedKmH": 8,
+        "lng": 30.9008303,
+        "heading": 89.82495880126953,
+        "stationarySeconds": 0,
+        "lat": 29.975294,
         "address": "الحى العاشر، الحى الحادى عشر، السادس من أكتوبر",
-        "lat": 29.9752448,
-        "stationarySeconds": 94,
-        "isStationary": true,
         "isGpsLive": true,
-        "speedKmH": 0,
-        "lastMovedTimestamp": 1791633657627,
-        "lng": 30.9007767,
-        "lastGpsUpdate": "2026-10-10T12:01:02.717Z",
-        "altitude": 180,
-        "accuracy": 11,
-        "heading": 25.606178283691406
+        "altitude": 181,
+        "lastMovedTimestamp": 1791739016086,
+        "isStationary": false,
+        "lastGpsUpdate": "2026-10-11T17:16:56.086Z"
       },
       "shift": {
-        "totalOrdersDelivered": 0,
         "isEnded": false,
         "startTime": "2026-10-10T11:56:57.172Z",
-        "totalCollectedCash": 0,
+        "totalCollectedInstapay": 0,
         "totalCollectedVisa": 0,
-        "totalDeliveryEarnings": 0,
-        "totalCollectedInstapay": 0
+        "totalCollectedCash": 0,
+        "totalOrdersDelivered": 0,
+        "totalDeliveryEarnings": 0
       },
       "isStoppageAlertActive": false,
       "stoppageAlertAcknowledged": false,
       "createdAt": "2026-10-10T11:56:57.172Z",
       "isOfflineAlertActive": false,
-      "offlineSeconds": 96,
-      "lastSeenTimestamp": 1791738361629,
+      "offlineSeconds": 53,
+      "lastSeenTimestamp": 1792219139020,
       "isInternetOnline": true
     }
   ],
@@ -158,6 +159,38 @@
       "isArchived": false
     }
   ],
-  "shiftSummaries": [],
-  "lastUpdated": "2026-10-11T17:15:00.000Z"
+  "shiftSummaries": [
+    {
+      "totalOrdersCount": 0,
+      "courierId": "courier-1791556934998-961",
+      "endTime": "2026-10-10T08:37:57.001Z",
+      "totalInstapayCollected": 0,
+      "totalVisaCollected": 0,
+      "orders": [],
+      "shiftDate": "السبت، ١٠ أكتوبر ٢٠٢٦",
+      "id": "shift-1791621477001",
+      "pharmacyId": "pharma-main",
+      "courierName": "مصطفي",
+      "startTime": "2026-10-09T14:42:14.999Z",
+      "totalDeliveryFees": 0,
+      "totalCashCollected": 0
+    },
+    {
+      "totalCashCollected": 0,
+      "startTime": "2026-10-09T14:42:14.999Z",
+      "shiftDate": "السبت، ١٠ أكتوبر ٢٠٢٦",
+      "courierName": "مصطفي",
+      "totalOrdersCount": 0,
+      "endTime": "2026-10-10T07:45:19.513Z",
+      "totalDeliveryFees": 0,
+      "pharmacyId": "pharma-main",
+      "id": "shift-1791618319513",
+      "totalVisaCollected": 0,
+      "courierId": "courier-1791556934998-961",
+      "totalInstapayCollected": 0,
+      "orders": []
+    }
+  ],
+  "deletedCourierIds": [],
+  "lastUpdated": "2026-10-17T06:39:52.147Z"
 }

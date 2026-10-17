@@ -4,11 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>فارما ديليفري - إدارة وتتبع مناديب الصيدلية</title>
-    <meta name="description" content="نظام ذكي لربط الصيدلي بمناديب التوصيل، حساب عمولات ومحافظ الأوردرات، أرشفة سحابية، تتبع حي على الخريطة وإنذار توقف بعد 5 دقائق." />
+    <meta name="description" content="نظام ذكي لربط الصيدلي بمناديب التوصيل، حساب عمولات ومحافظ الأوردرات، أرشفة سحابية وتصدير سجل الأوردرات PDF، تتبع حي على الخريطة وإنذار توقف بعد 10 دقائق." />
     <meta property="og:title" content="فارما ديليفري - إدارة وتتبع مناديب الصيدلية" />
-    <meta property="og:description" content="نظام ذكي لربط الصيدلي بمناديب التوصيل، حساب عمولات ومحافظ الأوردرات، أرشفة سحابية، تتبع حي على الخريطة وإنذار توقف بعد 5 دقائق." />
+    <meta property="og:description" content="نظام ذكي لربط الصيدلي بمناديب التوصيل، حساب عمولات ومحافظ الأوردرات، أرشفة سحابية وتصدير سجل الأوردرات PDF، تتبع حي على الخريطة وإنذار توقف بعد 10 دقائق." />
     <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#059669" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="فارما ديليفري" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -16,6 +24,13 @@
   </head>
   <body class="bg-slate-50 text-slate-900 font-['Cairo',sans-serif] antialiased selection:bg-emerald-500 selection:text-white min-h-screen">
     <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
