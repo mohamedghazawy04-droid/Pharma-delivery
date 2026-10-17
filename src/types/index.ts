@@ -27,6 +27,8 @@ export interface CourierShiftInfo {
   totalCollectedCash: number; // نقدي
   totalCollectedVisa: number; // فيزا
   totalCollectedInstapay: number; // انستاباي
+  totalCollectedVodafoneCash?: number; // فودافون كاش
+  totalCollectedDeferred?: number; // آجل / على الحساب
 }
 
 export interface CourierProfile {
@@ -67,19 +69,24 @@ export interface CourierProfile {
 export type OrderStatus = 'assigned' | 'picked_up' | 'in_transit' | 'delivered' | 'cancelled';
 // نوع الأوردر (عادي / مستعجل / روشتة / أدوية ثلاجة / مستلزمات)
 export type OrderType = 'عادي' | 'مستعجل' | 'روشتة' | 'أدوية ثلاجة' | 'مستلزمات';
-// نقدي أو فيزا أو انستاباي
-export type PaymentMethod = 'cash' | 'visa' | 'instapay';
+// طرق الدفع: نقدي أو فيزا أو انستاباي أو فودافون كاش أو آجل
+export type PaymentMethod = 'cash' | 'visa' | 'instapay' | 'vodafone_cash' | 'deferred';
 
 export interface Order {
   id: string;
   pharmacyId: string;
   orderNumber: string; // auto sequence like #1, #2 or ORD-101
+  customerName?: string; // اسم العميل / المستلم
+  customerPhone?: string; // هاتف العميل
+  customerAddress?: string; // عنوان التوصيل
+  pills?: string[]; // قائمة الحبوب والأدوية المضافة للأوردر
+  pillsSummary?: string; // ملخص الأدوية السريع
   orderType?: OrderType; // نوع الأوردر
   orderValue: number; // قيمة الأوردر الأساسية بالجنيه
   deliveryFee: number; // قيمة المندوب (7 ج تضاف عند تمام التوصيل)
   completedFeeAdded?: number; // 7 جنيه المضافة عند تمام الأوردر
   totalValueWithDelivery?: number; // إجمالي القيمة بعد تمام التوصيل (قيمة الأوردر + 7 ج)
-  paymentMethod: PaymentMethod; // 'cash' | 'visa' | 'instapay'
+  paymentMethod: PaymentMethod; // 'cash' | 'visa' | 'instapay' | 'vodafone_cash' | 'deferred'
   courierId: string;
   courierPhone?: string;
   courierName?: string;

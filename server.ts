@@ -27,43 +27,6 @@ interface CloudData {
   lastUpdated: string;
 }
 
-const DEFAULT_COURIER_01000321253 = {
-  id: 'courier-01000321253',
-  name: 'كابتن التوصيل',
-  phone: '01000321253',
-  password: '123',
-  vehicleType: 'موتوسيكل',
-  vehicleNumber: '٧٨٩٥',
-  pharmacyId: 'pharma-main',
-  deliveryFeePerOrder: 7,
-  isOnDuty: true,
-  currentLocation: {
-    lat: 29.97056,
-    lng: 30.89801,
-    address: 'الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب',
-    speedKmH: 0,
-    lastMovedTimestamp: Date.now(),
-    isStationary: true,
-    stationarySeconds: 0,
-    accuracy: 15,
-    isGpsLive: true,
-  },
-  shift: {
-    startTime: new Date().toISOString(),
-    isEnded: false,
-    totalOrdersDelivered: 0,
-    totalDeliveryEarnings: 0,
-    totalCollectedCash: 0,
-    totalCollectedVisa: 0,
-    totalCollectedInstapay: 0,
-  },
-  isStoppageAlertActive: false,
-  stoppageAlertAcknowledged: false,
-  createdAt: new Date().toISOString(),
-  isInternetOnline: true,
-  offlineSeconds: 0,
-};
-
 const DEFAULT_INITIAL_DATA: CloudData = {
   pharmacies: [
     {
@@ -82,7 +45,7 @@ const DEFAULT_INITIAL_DATA: CloudData = {
       createdAt: '2026-10-06T00:00:00.000Z',
     },
   ],
-  couriers: [DEFAULT_COURIER_01000321253],
+  couriers: [],
   orders: [],
   shiftSummaries: [],
   deletedCourierIds: [],
@@ -211,9 +174,14 @@ app.get('/api/data', (_req, res) => {
   res.json({ success: true, data });
 });
 
+app.get('/api/sync', (_req, res) => {
+  const data = readCloudData();
+  res.json({ success: true, data });
+});
+
 // 2. Full Sync from client (Merges by ID so clients don't overwrite each other)
 app.post('/api/sync', (req, res) => {
-  const { pharmacies, couriers, orders, shiftSummaries, deletedCourierIds } = req.body;
+  const { pharmacies, couriers, orders, shiftSummaries, deletedCourierIds, replaceCouriers } = req.body;
   const current = readCloudData();
 
   const combinedDeleted = new Set<string>([
@@ -226,26 +194,35 @@ app.post('/api/sync', (req, res) => {
     ? mergeById(current.pharmacies, pharmacies)
     : current.pharmacies;
 
-  // Filter out any couriers that were deleted
-  const filteredCurrentCouriers = (current.couriers || []).filter(
-    (c: any) => c && c.id && !combinedDeleted.has(c.id)
-  );
-  const incomingCouriersFiltered = Array.isArray(couriers)
-    ? couriers.filter((c: any) => c && c.id && !combinedDeleted.has(c.id))
-    : filteredCurrentCouriers;
+  let finalCouriers: any[];
+  if (replaceCouriers && Array.isArray(couriers)) {
+    finalCouriers = couriers.filter((c: any) => c && c.id && !combinedDeleted.has(c.id));
+  } else {
+    // Filter out any couriers that were deleted
+    const filteredCurrentCouriers = (current.couriers || []).filter(
+      (c: any) => c && c.id && !combinedDeleted.has(c.id)
+    );
+    const incomingCouriersFiltered = Array.isArray(couriers)
+      ? couriers.filter((c: any) => c && c.id && !combinedDeleted.has(c.id))
+      : filteredCurrentCouriers;
 
-  const mergedCouriers = mergeById(filteredCurrentCouriers, incomingCouriersFiltered);
+    finalCouriers = mergeById(filteredCurrentCouriers, incomingCouriersFiltered);
+  }
 
-  const mergedOrders = Array.isArray(orders)
+  const mergedOrders = req.body.replaceOrders && Array.isArray(orders)
+    ? orders
+    : Array.isArray(orders)
     ? mergeById(current.orders, orders)
     : current.orders;
-  const mergedShifts = Array.isArray(shiftSummaries)
+  const mergedShifts = req.body.replaceShifts && Array.isArray(shiftSummaries)
+    ? shiftSummaries
+    : Array.isArray(shiftSummaries)
     ? mergeById(current.shiftSummaries, shiftSummaries)
     : current.shiftSummaries;
 
   const updated: CloudData = {
     pharmacies: mergedPharmacies,
-    couriers: mergedCouriers,
+    couriers: finalCouriers,
     orders: mergedOrders,
     shiftSummaries: mergedShifts,
     deletedCourierIds: current.deletedCourierIds,
@@ -254,6 +231,20 @@ app.post('/api/sync', (req, res) => {
 
   saveCloudData(updated);
   res.json({ success: true, data: updated });
+});
+
+// 2.1 Wipe all courier data endpoint
+app.post('/api/couriers/wipe', (_req, res) => {
+  const current = readCloudData();
+  const deletedSet = new Set<string>(current.deletedCourierIds || []);
+  (current.couriers || []).forEach((c: any) => {
+    if (c && c.id) deletedSet.add(c.id);
+  });
+  current.couriers = [];
+  current.deletedCourierIds = Array.from(deletedSet);
+  saveCloudData(current);
+  console.log('[Server] All couriers wiped as requested by pharmacist');
+  res.json({ success: true, couriers: [], deletedCourierIds: current.deletedCourierIds });
 });
 
 // 3. Register Courier Directly
@@ -559,7 +550,10 @@ async function startServer() {
   if (!isProd) {
     const { createServer } = await import('vite');
     const vite = await createServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);

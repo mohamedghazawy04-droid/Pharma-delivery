@@ -19,6 +19,8 @@ export const EditOrderModal: React.FC<Props> = ({
   const [orderValue, setOrderValue] = useState<number | string>('');
   const [orderType, setOrderType] = useState<OrderType>('عادي');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [customerName, setCustomerName] = useState('');
+  const [pillsSummary, setPillsSummary] = useState('');
   const [courierId, setCourierId] = useState('');
   const [deliveryFee, setDeliveryFee] = useState<number>(7);
   const [quickNote, setQuickNote] = useState('');
@@ -29,6 +31,8 @@ export const EditOrderModal: React.FC<Props> = ({
       setOrderValue(order.orderValue);
       setOrderType(order.orderType || 'عادي');
       setPaymentMethod(order.paymentMethod);
+      setCustomerName(order.customerName || '');
+      setPillsSummary(order.pillsSummary || '');
       setCourierId(order.courierId);
       setDeliveryFee(order.deliveryFee || 7);
       setQuickNote(order.quickNote || '');
@@ -50,6 +54,8 @@ export const EditOrderModal: React.FC<Props> = ({
       orderValue: numVal,
       orderType,
       paymentMethod,
+      customerName: customerName.trim() || undefined,
+      pillsSummary: pillsSummary.trim() || undefined,
       courierId,
       deliveryFee: Number(deliveryFee),
       quickNote,
@@ -150,12 +156,41 @@ export const EditOrderModal: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Payment Method: Cash vs Visa vs InstaPay */}
+          {/* Customer Name & Pills Details */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                اسم العميل / المستلم
+              </label>
+              <input
+                type="text"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="اسم العميل"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-hidden"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                الأدوية والحبوب المضافة
+              </label>
+              <input
+                type="text"
+                value={pillsSummary}
+                onChange={(e) => setPillsSummary(e.target.value)}
+                placeholder="الأدوية (مثل: بنادول + كونكور)"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-hidden"
+              />
+            </div>
+          </div>
+
+          {/* Payment Method: Cash vs Visa vs InstaPay vs Vodafone */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
               طريقة التحصيل * (تحديث فوري عند المندوب)
             </label>
-            <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-xl">
+            <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-100 rounded-xl">
               <button
                 type="button"
                 onClick={() => setPaymentMethod('cash')}
@@ -192,7 +227,19 @@ export const EditOrderModal: React.FC<Props> = ({
                 }`}
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>انستاباي</span>
+                <span>انستا</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('vodafone_cash')}
+                className={`py-2 px-1 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1 ${
+                  paymentMethod === 'vodafone_cash'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>📱 كاش</span>
               </button>
             </div>
           </div>

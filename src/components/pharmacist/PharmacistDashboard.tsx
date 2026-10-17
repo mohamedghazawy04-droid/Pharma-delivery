@@ -9,6 +9,7 @@ import {
   Clock,
   MapPin,
   CheckCircle,
+  Check,
   Plus,
   Play,
   RotateCcw,
@@ -54,6 +55,7 @@ import { EditCourierModal } from './EditCourierModal';
 import { ShiftPdfModal } from './ShiftPdfModal';
 import { formatDurationSeconds, calculateDistanceKm, PHARMACY_BASE_LOCATION } from '../../utils/geo';
 import { exportDailyOrdersToPdf } from '../../services/pdfExportService';
+import { PharmacistPreviewCubes } from './PharmacistPreviewCubes';
 
 interface Props {
   pharmacy: Pharmacy;
@@ -67,6 +69,7 @@ interface Props {
   onOpenPiggyBank: (summary: ShiftSummaryArchive) => void;
   onOpenAuthModal: () => void;
   onOpenGoogleDrive?: () => void;
+  onOpenSplash?: () => void;
 }
 
 export const PharmacistDashboard: React.FC<Props> = ({
@@ -81,8 +84,9 @@ export const PharmacistDashboard: React.FC<Props> = ({
   onOpenPiggyBank,
   onOpenAuthModal,
   onOpenGoogleDrive,
+  onOpenSplash,
 }) => {
-  const [activeTab, setActiveTab] = useState<'couriers' | 'orders' | 'archive' | 'shifts' | 'map'>('couriers');
+  const [activeTab, setActiveTab] = useState<'preview' | 'couriers' | 'orders' | 'archive' | 'shifts' | 'map'>('preview');
   const [selectedCourierId, setSelectedCourierId] = useState<string>(couriers[0]?.id || '');
   const [editingGlobalFee, setEditingGlobalFee] = useState<number>(pharmacy.globalDeliveryFee || 7);
   const [isEditingFeeOpen, setIsEditingFeeOpen] = useState(false);
@@ -96,6 +100,7 @@ export const PharmacistDashboard: React.FC<Props> = ({
   const [courierToDelete, setCourierToDelete] = useState<{ id: string; name: string } | null>(null);
   const [courierToEdit, setCourierToEdit] = useState<CourierProfile | null>(null);
   const [isDeletingCourier, setIsDeletingCourier] = useState(false);
+  const [copiedCourierId, setCopiedCourierId] = useState<string | null>(null);
 
   // Fast inline order entry states (قيمة فقط لسرعة العمل)
   const [fastOrderValue, setFastOrderValue] = useState('');
@@ -124,6 +129,18 @@ export const PharmacistDashboard: React.FC<Props> = ({
       unsubAlert();
     };
   }, []);
+
+  // Desktop / Laptop Keyboard shortcuts for fast pharmacy operations (F2 or Ctrl+N)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n')) {
+        e.preventDefault();
+        onOpenNewOrder();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onOpenNewOrder]);
 
   const handleRequestNotificationPermission = async () => {
     const perm = await notificationService.requestPermission();
@@ -171,7 +188,12 @@ export const PharmacistDashboard: React.FC<Props> = ({
   const activeCouriersCount = pharmacyCouriers.filter((c) => c.isOnDuty && !c.shift.isEnded).length;
   const inTransitOrdersCount = activeOrders.filter((o) => o.status === 'in_transit' || o.status === 'picked_up').length;
   const deliveredTodayCount = activeOrders.filter((o) => o.status === 'delivered').length;
-  const totalCashCollected = pharmacyCouriers.reduce((sum, c) => sum + c.shift.totalCollectedCash, 0);
+  const totalCashCollected = pharmacyCouriers.reduce((sum, c) => sum + (c.shift.totalCollectedCash || 0), 0);
+  const totalVisaCollected = pharmacyCouriers.reduce((sum, c) => sum + (c.shift.totalCollectedVisa || 0), 0);
+  const totalInstapayCollected = pharmacyCouriers.reduce((sum, c) => sum + (c.shift.totalCollectedInstapay || 0), 0);
+  const totalDeliveryEarnings = pharmacyCouriers.reduce((sum, c) => sum + (c.shift.totalDeliveryEarnings || 0), 0);
+  const totalGrossIncomings = totalCashCollected + totalVisaCollected + totalInstapayCollected;
+  const totalNetPharmacy = Math.max(0, totalGrossIncomings - totalDeliveryEarnings);
 
   // Handle Ultra-Fast Order Submit
   const handleFastOrderSubmit = (e: React.FormEvent) => {
@@ -704,71 +726,164 @@ export const PharmacistDashboard: React.FC<Props> = ({
             </div>
           </div>
         </div>
+
+        {/* Detailed Incomings Breakdown (توضيح وتسجيل الواردات والتحصيلات عند المناديب) */}
+        <div className="mt-4 p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs">
+          <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Banknote className="w-4 h-4 text-emerald-600" />
+              <h3 className="text-xs font-black text-slate-900">
+                بيان وتوضيح الواردات والتحصيلات اليومية عند المناديب
+              </h3>
+            </div>
+            <span className="text-[11px] font-bold text-slate-500">
+              إجمالي المحصل: <strong className="text-emerald-700 font-mono font-black">{totalGrossIncomings} ج</strong>
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-xs">
+            {/* Cash */}
+            <div className="p-2.5 bg-emerald-50/70 border border-emerald-200/80 rounded-xl">
+              <span className="text-[10px] text-emerald-800 font-bold block mb-0.5">
+                💵 كاش مع المناديب
+              </span>
+              <div className="text-base font-black font-mono text-emerald-950">
+                {totalCashCollected} <span className="text-xs font-bold font-sans">ج</span>
+              </div>
+            </div>
+
+            {/* Visa */}
+            <div className="p-2.5 bg-purple-50/70 border border-purple-200/80 rounded-xl">
+              <span className="text-[10px] text-purple-800 font-bold block mb-0.5">
+                💳 مدفوع فيزا (POS)
+              </span>
+              <div className="text-base font-black font-mono text-purple-950">
+                {totalVisaCollected} <span className="text-xs font-bold font-sans">ج</span>
+              </div>
+            </div>
+
+            {/* Instapay */}
+            <div className="p-2.5 bg-blue-50/70 border border-blue-200/80 rounded-xl">
+              <span className="text-[10px] text-blue-800 font-bold block mb-0.5">
+                ⚡ محول انستاباي
+              </span>
+              <div className="text-base font-black font-mono text-blue-950">
+                {totalInstapayCollected} <span className="text-xs font-bold font-sans">ج</span>
+              </div>
+            </div>
+
+            {/* Delivery Fees */}
+            <div className="p-2.5 bg-amber-50/70 border border-amber-200/80 rounded-xl">
+              <span className="text-[10px] text-amber-800 font-bold block mb-0.5">
+                🛵 عمولات المناديب
+              </span>
+              <div className="text-base font-black font-mono text-amber-950">
+                {totalDeliveryEarnings} <span className="text-xs font-bold font-sans">ج</span>
+              </div>
+            </div>
+
+            {/* Net Pharmacy */}
+            <div className="p-2.5 bg-slate-900 text-white rounded-xl col-span-2 sm:col-span-1 lg:col-span-2 shadow-xs">
+              <span className="text-[10px] text-emerald-300 font-bold block mb-0.5">
+                ✨ صافي وارد الصيدلية
+              </span>
+              <div className="text-base font-black font-mono text-emerald-400">
+                {totalNetPharmacy} <span className="text-xs font-bold font-sans text-white">جنيه</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Main Tabs Navigation (متوافق مع شاشات الكمبيوتر والموبايل) */}
-      <div className="flex items-center gap-1.5 p-1.5 bg-slate-200/80 rounded-2xl max-w-3xl text-xs font-bold overflow-x-auto scrollbar-none shadow-2xs">
+      {/* Main Tabs Navigation (متوافق مع شاشات الكمبيوتر والموبايل - نمط أبيض وأسود فاخر) */}
+      <div className="flex items-center gap-1.5 p-1.5 bg-zinc-200/90 border border-zinc-300 rounded-2xl max-w-4xl text-xs font-bold overflow-x-auto scrollbar-none shadow-xs">
+        <button
+          onClick={() => setActiveTab('preview')}
+          className={`flex-1 py-2.5 px-3.5 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
+            activeTab === 'preview'
+              ? 'bg-black text-white shadow-md font-black border border-black'
+              : 'text-zinc-700 hover:text-black hover:bg-zinc-300/60'
+          }`}
+          title="شاشة المعاينة والمكعبات 3D السريعة للصيدلي"
+        >
+          <span className="text-sm">🎲</span>
+          <span>المعاينة والمكعبات 3D</span>
+        </button>
+
         <button
           onClick={() => setActiveTab('map')}
-          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
+          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'map'
-              ? 'bg-emerald-600 text-white shadow-xs font-black ring-2 ring-emerald-500/30'
-              : 'text-slate-700 hover:text-slate-900 hover:bg-slate-300/40'
+              ? 'bg-black text-white shadow-md font-black border border-black'
+              : 'text-zinc-700 hover:text-black hover:bg-zinc-300/60'
           }`}
           title="فتح شاشة التتبع المباشر وخريطة المناديب للكمبيوتر"
         >
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
-          <span>🛰️ شاشة التتبع والخريطة ({pharmacyCouriers.length})</span>
+          <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />
+          <span>🛰️ رادار التتبع والخريطة ({pharmacyCouriers.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('couriers')}
-          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
+          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'couriers'
-              ? 'bg-white text-slate-900 shadow-xs font-black'
-              : 'text-slate-700 hover:text-slate-900 hover:bg-slate-300/40'
+              ? 'bg-black text-white shadow-md font-black border border-black'
+              : 'text-zinc-700 hover:text-black hover:bg-zinc-300/60'
           }`}
         >
-          <Users className="w-3.5 h-3.5 text-indigo-600" />
+          <Users className="w-3.5 h-3.5 text-current" />
           <span>مناديب الصيدلية ({pharmacyCouriers.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('orders')}
-          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
+          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'orders'
-              ? 'bg-white text-slate-900 shadow-xs font-black'
-              : 'text-slate-700 hover:text-slate-900 hover:bg-slate-300/40'
+              ? 'bg-black text-white shadow-md font-black border border-black'
+              : 'text-zinc-700 hover:text-black hover:bg-zinc-300/60'
           }`}
         >
-          <Package className="w-3.5 h-3.5 text-emerald-600" />
+          <Package className="w-3.5 h-3.5 text-current" />
           <span>الأوردرات النشطة ({activeOrders.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('archive')}
-          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
+          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'archive'
-              ? 'bg-white text-slate-900 shadow-xs font-black'
-              : 'text-slate-700 hover:text-slate-900 hover:bg-slate-300/40'
+              ? 'bg-black text-white shadow-md font-black border border-black'
+              : 'text-zinc-700 hover:text-black hover:bg-zinc-300/60'
           }`}
         >
-          <Archive className="w-3.5 h-3.5 text-slate-500" />
+          <Archive className="w-3.5 h-3.5 text-current" />
           <span>الأرشيف ({archivedOrders.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('shifts')}
-          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
+          className={`flex-1 py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'shifts'
-              ? 'bg-white text-slate-900 shadow-xs font-black'
-              : 'text-slate-700 hover:text-slate-900 hover:bg-slate-300/40'
+              ? 'bg-black text-white shadow-md font-black border border-black'
+              : 'text-zinc-700 hover:text-black hover:bg-zinc-300/60'
           }`}
         >
-          <History className="w-3.5 h-3.5 text-amber-600" />
+          <History className="w-3.5 h-3.5 text-current" />
           <span>الشفتات ({pharmacyShiftSummaries.length})</span>
         </button>
       </div>
+
+      {/* Tab: 3D Preview Cubes (المعاينة السريعة والمكعبات 3D المتكاملة) */}
+      {activeTab === 'preview' && (
+        <PharmacistPreviewCubes
+          pharmacy={pharmacy}
+          couriers={pharmacyCouriers}
+          orders={orders}
+          onOpenLiveMap={() => setActiveTab('map')}
+          onOpenNewOrderModal={onOpenNewOrder}
+          onOpenAddCourierModal={onOpenAuthModal}
+          onOpenSplash={onOpenSplash}
+        />
+      )}
 
       {/* Tab 1: Couriers */}
       {activeTab === 'couriers' && (
@@ -885,17 +1000,17 @@ export const PharmacistDashboard: React.FC<Props> = ({
             <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-xs space-y-3">
               <Bike className="w-12 h-12 text-slate-300 mx-auto" />
               <h3 className="text-base font-extrabold text-slate-800">
-                لا يوجد مناديب مسجلين حتى الآن
+                لا يوجد مناديب مسجلين حالياً في الصيدلية
               </h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                عندما يقوم أي مندوب بإنشاء حساب وتسجيل الدخول عبر الموبايل، سيظهر هنا فوراً مع صوت تنبيهي وإشعار مباشر.
+              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                يمكنك إضافة أسماء كباتن التوصيل وتزويدهم برابط مباشر عبر واتساب لبث موقعهم وعرض الأوردرات المطلوب توصيلها وتحصيل قيمتها دون الحاجة لأي حساب أو كلمة مرور للمندوب.
               </p>
               <button
                 onClick={onOpenAuthModal}
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition inline-flex items-center gap-1.5"
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition inline-flex items-center gap-1.5 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                <span>+ تسجيل مندوب جديد</span>
+                <span>+ إضافة كابتن توصيل جديد 🛵</span>
               </button>
             </div>
           ) : (
@@ -1142,15 +1257,45 @@ export const PharmacistDashboard: React.FC<Props> = ({
                         <span>🎯 تتبع {courier.name} على الخريطة المباشرة</span>
                       </button>
 
-                      {/* Action 1.5: Supervisor Direct Inspection of Courier Dashboard */}
-                      <button
-                        onClick={() => store.setRole('courier', courier.id)}
-                        className="w-full py-2 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-2xs"
-                        title="معاينة شاشة المندوب وأوردراته كمدير صيدلي مشرف بدون تغيير هويتك"
-                      >
-                        <Eye className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>معاينة شاشة {courier.name} (إشراف الصيدلي) 👁️</span>
-                      </button>
+                      {/* Action 1.5: Copy Dedicated Courier GPS & Delivery Link */}
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          onClick={() => {
+                            const link = `${window.location.origin}${window.location.pathname}?c=${courier.id}&mode=courier`;
+                            navigator.clipboard.writeText(link);
+                            setCopiedCourierId(courier.id);
+                            setTimeout(() => setCopiedCourierId(null), 3000);
+                          }}
+                          className={`py-2 px-2 border rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition shadow-2xs cursor-pointer ${
+                            copiedCourierId === courier.id
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                          }`}
+                          title="نسخ رابط المندوب الخاص به لبث موقعه ومتابعة أوردراته"
+                        >
+                          {copiedCourierId === courier.id ? <Check className="w-3.5 h-3.5" /> : <Radio className="w-3.5 h-3.5" />}
+                          <span className="truncate">
+                            {copiedCourierId === courier.id ? 'تم النسخ ✔️' : '📱 نسخ الرابط'}
+                          </span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            const link = `${window.location.origin}${window.location.pathname}?c=${courier.id}&mode=courier`;
+                            const msg = encodeURIComponent(`أهلاً يا كابتن ${courier.name}، هذا رابط أوردراتك وبث موقعك لصيدلية ${pharmacy.name}:\n${link}`);
+                            const cleanPhone = (courier.phone || '').replace(/\D/g, '');
+                            const waUrl = cleanPhone.length >= 10
+                              ? `https://wa.me/2${cleanPhone.replace(/^0+/, '')}?text=${msg}`
+                              : `https://wa.me/?text=${msg}`;
+                            window.open(waUrl, '_blank');
+                          }}
+                          className="py-2 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition shadow-2xs cursor-pointer"
+                          title="إرسال الرابط المباشر للكابتن على واتساب"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="truncate">واتساب 📲</span>
+                        </button>
+                      </div>
 
                       {/* Action 2: End Shift */}
                       {courier.isOnDuty && !courier.shift.isEnded ? (

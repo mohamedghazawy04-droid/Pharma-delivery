@@ -4,7 +4,7 @@ import { Header } from './components/Header';
 import { LoginScreen } from './components/LoginScreen';
 import { StoppageAlertBanner } from './components/StoppageAlertBanner';
 import { PharmacistDashboard } from './components/pharmacist/PharmacistDashboard';
-import { CourierDashboard } from './components/courier/CourierDashboard';
+import { CourierBeaconView } from './components/courier/CourierBeaconView';
 import { NewOrderModal } from './components/NewOrderModal';
 import { TransferOrderModal } from './components/TransferOrderModal';
 import { EditOrderModal } from './components/EditOrderModal';
@@ -13,11 +13,12 @@ import { PiggyBankModal } from './components/PiggyBankModal';
 import { ManagePharmaciesModal } from './components/pharmacist/ManagePharmaciesModal';
 import { GoogleDriveModal } from './components/GoogleDriveModal';
 import { DeliveryToast } from './components/DeliveryToast';
+import { LaunchSplashScreen } from './components/LaunchSplashScreen';
 import { Order, ShiftSummaryArchive } from './types';
-import { Bike, Plus } from 'lucide-react';
 
 export default function App() {
   const [state, setState] = useState(store.getState());
+  const [showSplash, setShowSplash] = useState(true);
 
   // Modals state
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
@@ -37,38 +38,7 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  const isCourierLink =
-    typeof window !== 'undefined' &&
-    (new URLSearchParams(window.location.search).get('role') === 'courier' ||
-      new URLSearchParams(window.location.search).get('mode') === 'courier');
-
-  // Authentication Check:
-  if (state.role === 'courier' || isCourierLink) {
-    // If not authenticated as courier AND not pharmacist supervisor
-    if (!state.authenticatedCourierId && !state.authenticatedAsPharmacist) {
-      return (
-        <LoginScreen
-          pharmacies={state.pharmacies}
-          activePharmacyId={state.activePharmacyId}
-          defaultMode="courier"
-          lockMode="courier"
-        />
-      );
-    }
-  } else {
-    // Pharmacist manager role
-    if (!state.authenticatedAsPharmacist) {
-      return (
-        <LoginScreen
-          pharmacies={state.pharmacies}
-          activePharmacyId={state.activePharmacyId}
-          defaultMode="pharmacist"
-          lockMode="pharmacist"
-        />
-      );
-    }
-  }
-
+  // Determine active pharmacy
   const activePharmacy =
     state.pharmacies.find((p) => p.id === state.activePharmacyId) || state.pharmacies[0];
 
@@ -80,174 +50,140 @@ export default function App() {
     (c) => c.isOnDuty && !c.shift.isEnded && c.isStoppageAlertActive
   );
 
-  const currentCourier =
-    (state.authenticatedCourierId &&
-      state.couriers.find((c) => c.id === state.authenticatedCourierId)) ||
-    pharmacyCouriers.find((c) => c.id === state.currentCourierId) ||
-    pharmacyCouriers[0] ||
-    state.couriers[0];
+  // Check if opened via dedicated courier beacon link
+  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const isCourierBeacon = Boolean(
+    urlParams &&
+      (urlParams.has('courierId') ||
+        urlParams.has('c') ||
+        urlParams.get('mode') === 'courier' ||
+        urlParams.get('role') === 'courier')
+  );
+
+  // 1. Courier Beacon & Orders View (Dedicated mobile page for the courier)
+  if (isCourierBeacon) {
+    const initialCourierId =
+      urlParams?.get('courierId') || urlParams?.get('c') || undefined;
+
+    return (
+      <CourierBeaconView
+        pharmacy={activePharmacy}
+        allCouriers={pharmacyCouriers.length > 0 ? pharmacyCouriers : state.couriers}
+        orders={state.orders}
+        initialCourierId={initialCourierId}
+      />
+    );
+  }
+
+  // 2. Fast Launch Splash Screen with 3D Motorcycle and "Made by dr.mohamed elghazawy" Signature
+  if (showSplash && !isCourierBeacon) {
+    return (
+      <LaunchSplashScreen
+        onLaunch={() => setShowSplash(false)}
+        pharmacyName={activePharmacy.name}
+      />
+    );
+  }
+
+  // 3. Main Pharmacist App (Desktop, Laptop, PC, and Central Admin)
+  if (!state.authenticatedAsPharmacist) {
+    return (
+      <LoginScreen
+        pharmacies={state.pharmacies}
+        activePharmacyId={state.activePharmacyId}
+      />
+    );
+  }
 
   const handleOpenPiggyBankForCourier = (summary?: ShiftSummaryArchive) => {
     if (summary) {
       setPiggyBankSummary(summary);
       setIsPiggyBankOpen(true);
-    } else if (currentCourier) {
-      // Preview summary for current courier's active shift
-      const courierOrders = state.orders.filter(
-        (o) => o.courierId === currentCourier.id && o.pharmacyId === activePharmacy.id
-      );
-      const previewSummary: ShiftSummaryArchive = {
-        id: `preview-${Date.now()}`,
-        pharmacyId: activePharmacy.id,
-        courierId: currentCourier.id,
-        courierName: currentCourier.name,
-        shiftDate: new Date().toLocaleDateString('ar-EG', {
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        }),
-        startTime: currentCourier.shift.startTime,
-        endTime: new Date().toISOString(),
-        totalOrdersCount: currentCourier.shift.totalOrdersDelivered,
-        totalDeliveryFees: currentCourier.shift.totalDeliveryEarnings,
-        totalCashCollected: currentCourier.shift.totalCollectedCash,
-        totalVisaCollected: currentCourier.shift.totalCollectedVisa,
-        totalInstapayCollected: currentCourier.shift.totalCollectedInstapay,
-        orders: courierOrders.map((o) => ({
-          orderNumber: o.orderNumber,
-          orderValue: o.orderValue,
-          deliveryFee: o.deliveryFee,
-          paymentMethod: o.paymentMethod,
-          deliveredAt: o.deliveredAt,
-        })),
-      };
-      setPiggyBankSummary(previewSummary);
-      setIsPiggyBankOpen(true);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col font-['Cairo',sans-serif]">
-      {/* Live Order Delivery Browser Notification Banner Toast */}
-      <DeliveryToast />
-
-      {/* 5-minute Inactivity Stoppage Real Alert Banner */}
+    <div className="min-h-screen bg-zinc-100 text-zinc-950 flex flex-col font-['Cairo',sans-serif] selection:bg-black selection:text-white">
+      {/* Real-time Stoppage Alerts Banner for Pharmacist */}
       <StoppageAlertBanner
         couriers={state.couriers}
-        currentRole={state.role}
-        currentCourierId={state.currentCourierId}
+        currentRole="pharmacist"
+        currentCourierId=""
       />
 
-      {/* Top Header conforming to Top Bar Contract */}
+      {/* Real-time Order Delivered Notification Toast */}
+      <DeliveryToast />
+
+      {/* Desktop / Laptop Top Navigation Header */}
       <Header
-        currentRole={state.role}
-        onRoleChange={(role) => store.setRole(role)}
         pharmacies={state.pharmacies}
         activePharmacyId={state.activePharmacyId}
         onSelectPharmacy={(id) => store.setActivePharmacy(id)}
         onOpenManagePharmacies={() => setIsManagePharmaciesOpen(true)}
         couriers={pharmacyCouriers}
-        currentCourierId={state.currentCourierId}
-        onCourierSelect={(id) => store.setCurrentCourier(id)}
         onOpenNewOrder={() => setIsNewOrderModalOpen(true)}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
         onOpenGoogleDrive={() => setIsGoogleDriveOpen(true)}
+        onOpenSplash={() => setShowSplash(true)}
         activeAlertCount={activeAlertingCouriers.length}
       />
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {state.role === 'pharmacist' ? (
-          <PharmacistDashboard
-            pharmacy={activePharmacy}
-            pharmacies={state.pharmacies}
-            couriers={state.couriers}
-            orders={state.orders}
-            shiftSummaries={state.shiftSummaries}
-            onOpenNewOrder={() => setIsNewOrderModalOpen(true)}
-            onOpenTransferModal={(ord) => setTransferOrder(ord)}
-            onOpenEditOrder={(ord) => setEditingOrder(ord)}
-            onOpenPiggyBank={(summary) => {
-              setPiggyBankSummary(summary);
-              setIsPiggyBankOpen(true);
-            }}
-            onOpenAuthModal={() => setIsAuthModalOpen(true)}
-            onOpenGoogleDrive={() => setIsGoogleDriveOpen(true)}
-          />
-        ) : currentCourier ? (
-          <div>
-            {state.authenticatedAsPharmacist && (
-              <div className="mb-4 p-3.5 bg-amber-500 text-white rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-2 shadow-md">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">👁️</span>
-                  <div>
-                    <strong className="text-xs sm:text-sm block">وضع المعاينة والإشراف المباشر على المندوب</strong>
-                    <span className="text-[11px] text-amber-100">
-                      أنت الصيدلي المسئول وتتحكم في حساب الكابتن ({currentCourier.name}) ولست المندوب نفسه
-                    </span>
-                  </div>
-                </div>
-                <button
-                  onClick={() => store.setRole('pharmacist')}
-                  className="px-4 py-2 bg-white text-amber-900 rounded-xl text-xs font-black hover:bg-amber-50 transition shadow-xs"
-                >
-                  العودة للوحة تحكم الصيدلي ⬅️
-                </button>
-              </div>
-            )}
-            <CourierDashboard
-              courier={currentCourier}
-              orders={state.orders}
-              pharmacy={activePharmacy}
-              allCouriers={pharmacyCouriers}
-              onOpenPiggyBankModal={() => handleOpenPiggyBankForCourier()}
-            />
-          </div>
-        ) : (
-          <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-xs space-y-4 max-w-lg mx-auto">
-            <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center text-3xl mx-auto">
-              <Bike className="w-8 h-8" />
-            </div>
-            <h3 className="text-lg font-extrabold text-slate-800">
-              لا يوجد مندوب مسجل حالياً في {activePharmacy.name}
-            </h3>
-            <p className="text-xs text-slate-500">
-              لتجربة شاشة المندوب، يرجى تسجيل حساب مندوب جديد أو تسجيل الدخول برقم الهاتف وكلمة المرور.
-            </p>
-            <div className="flex justify-center gap-2 pt-2">
-              <button
-                onClick={() => setIsAuthModalOpen(true)}
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5"
-              >
-                <Plus className="w-4 h-4" />
-                <span>تسجيل أو دخول كمندوب</span>
-              </button>
-              <button
-                onClick={() => store.setRole('pharmacist')}
-                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition"
-              >
-                العودة للصيدلي
-              </button>
-            </div>
-          </div>
-        )}
+      {/* Main Pharmacist Workspace (Optimized for PC & Laptop) */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+        <PharmacistDashboard
+          pharmacy={activePharmacy}
+          pharmacies={state.pharmacies}
+          couriers={state.couriers}
+          orders={state.orders}
+          shiftSummaries={state.shiftSummaries}
+          onOpenNewOrder={() => setIsNewOrderModalOpen(true)}
+          onOpenTransferModal={(ord) => setTransferOrder(ord)}
+          onOpenEditOrder={(ord) => setEditingOrder(ord)}
+          onOpenPiggyBank={(summary) => {
+            setPiggyBankSummary(summary);
+            setIsPiggyBankOpen(true);
+          }}
+          onOpenAuthModal={() => setIsAuthModalOpen(true)}
+          onOpenGoogleDrive={() => setIsGoogleDriveOpen(true)}
+          onOpenSplash={() => setShowSplash(true)}
+        />
       </main>
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>
-            فارما ديليفري © {new Date().getFullYear()} · نظام إدارة أوردرات الصيدلية والمناديب
-          </span>
-          <div className="flex items-center gap-4 text-slate-400">
-            <span>نظام مشفر ومحمي</span>
+      {/* Footer with Dr. Mohamed Elghazawy Signature in Black & White */}
+      <footer className="bg-white border-t border-zinc-300 py-4 text-center text-xs text-zinc-600">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-zinc-800">
+              فارما ديليفري © {new Date().getFullYear()} · نظام إدارة وتتبع مناديب الصيدلية وتسجيل الواردات
+            </span>
+          </div>
+
+          {/* Official Signature Button in Footer - Black & White Luxury */}
+          <button
+            onClick={() => setShowSplash(true)}
+            title="Made by dr.mohamed elghazawy - انقر لعرض شاشة الانطلاق السريعة"
+            className="flex items-center gap-2 px-3.5 py-1.5 bg-black hover:bg-zinc-800 text-white rounded-xl text-xs font-bold border border-black shadow-md transition cursor-pointer"
+          >
+            <img
+              src="/delivery_motorcycle.jpg"
+              alt="Motorcycle"
+              className="w-4 h-4 rounded-full object-cover bw-motorcycle"
+            />
+            <span className="font-mono text-[11px] font-black tracking-wide text-zinc-100">
+              Made by dr.mohamed elghazawy
+            </span>
+            <span className="text-zinc-400 text-[10px]">·</span>
+            <span className="text-[10px] text-zinc-300 font-bold">صيدلية الديب</span>
+          </button>
+
+          <div className="flex items-center gap-4 text-zinc-500 font-semibold">
+            <span>نظام سحابي مشفر</span>
             <span>·</span>
-            <span>أوردرات سريعة بالقيمة فقط</span>
+            <span>تتبع GPS حي للصيدلي</span>
             <span>·</span>
-            <span>تعدد الصيدليات</span>
+            <span>أوردرات سريعة بالقيمة</span>
             <span>·</span>
-            <span>إنذار حقيقي 5 دقائق</span>
+            <span>متوافق تماماً مع الكمبيوتر واللابتوب والموبايل</span>
           </div>
         </div>
       </footer>
@@ -260,35 +196,32 @@ export default function App() {
         globalDeliveryFee={activePharmacy.globalDeliveryFee || 7}
       />
 
-      <TransferOrderModal
-        isOpen={transferOrder !== null}
-        onClose={() => setTransferOrder(null)}
-        order={transferOrder}
-        couriers={pharmacyCouriers}
-      />
+      {transferOrder && (
+        <TransferOrderModal
+          isOpen={!!transferOrder}
+          onClose={() => setTransferOrder(null)}
+          order={transferOrder}
+          couriers={pharmacyCouriers}
+        />
+      )}
 
-      <EditOrderModal
-        isOpen={editingOrder !== null}
-        onClose={() => setEditingOrder(null)}
-        order={editingOrder}
-        couriers={pharmacyCouriers}
-      />
+      {editingOrder && (
+        <EditOrderModal
+          isOpen={!!editingOrder}
+          onClose={() => setEditingOrder(null)}
+          order={editingOrder}
+          couriers={pharmacyCouriers}
+        />
+      )}
 
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
-        currentRole={state.role}
+        currentRole="pharmacist"
         pharmacies={state.pharmacies}
         activePharmacyId={state.activePharmacyId}
-        couriers={state.couriers}
-        currentCourierId={state.currentCourierId}
-      />
-
-      <PiggyBankModal
-        isOpen={isPiggyBankOpen}
-        onClose={() => setIsPiggyBankOpen(false)}
-        summary={piggyBankSummary}
-        pharmacy={activePharmacy}
+        couriers={pharmacyCouriers}
+        currentCourierId=""
       />
 
       <ManagePharmaciesModal
@@ -298,6 +231,12 @@ export default function App() {
         activePharmacyId={state.activePharmacyId}
         couriers={state.couriers}
         orders={state.orders}
+      />
+
+      <PiggyBankModal
+        isOpen={isPiggyBankOpen}
+        onClose={() => setIsPiggyBankOpen(false)}
+        summary={piggyBankSummary}
       />
 
       <GoogleDriveModal

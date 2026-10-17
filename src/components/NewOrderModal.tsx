@@ -1,6 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { X, DollarSign, Bike, Check, Zap, AlertTriangle } from 'lucide-react';
-import { CourierProfile, PaymentMethod, OrderType } from '../types';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  X,
+  Zap,
+  DollarSign,
+  AlertTriangle,
+  Bike,
+  Plus,
+  User,
+  Phone,
+} from 'lucide-react';
+import { CourierProfile, OrderType, PaymentMethod } from '../types';
 import { store } from '../services/store';
 
 interface Props {
@@ -16,9 +25,12 @@ export const NewOrderModal: React.FC<Props> = ({
   couriers,
   globalDeliveryFee,
 }) => {
-  const [orderValue, setOrderValue] = useState<string>('');
+  const [orderValue, setOrderValue] = useState('');
   const [orderType, setOrderType] = useState<OrderType>('عادي');
   const [selectedCourierId, setSelectedCourierId] = useState(couriers[0]?.id || '');
+  const [isAddingNewCourier, setIsAddingNewCourier] = useState(couriers.length === 0);
+  const [newCourierName, setNewCourierName] = useState('');
+  const [newCourierPhone, setNewCourierPhone] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [customDeliveryFee, setCustomDeliveryFee] = useState<number>(globalDeliveryFee || 7);
   const [quickNote, setQuickNote] = useState('');
@@ -29,15 +41,20 @@ export const NewOrderModal: React.FC<Props> = ({
     if (isOpen) {
       setFormError('');
       setOrderType('عادي');
-      if (couriers.length > 0 && !selectedCourierId) {
-        setSelectedCourierId(couriers[0].id);
-        setCustomDeliveryFee(couriers[0].deliveryFeePerOrder || globalDeliveryFee || 7);
+      if (couriers.length > 0) {
+        if (!selectedCourierId || !couriers.some((c) => c.id === selectedCourierId)) {
+          setSelectedCourierId(couriers[0].id);
+          setCustomDeliveryFee(couriers[0].deliveryFeePerOrder || globalDeliveryFee || 7);
+        }
+        setIsAddingNewCourier(false);
+      } else {
+        setIsAddingNewCourier(true);
       }
       setTimeout(() => {
         inputRef.current?.focus();
       }, 50);
     }
-  }, [isOpen, couriers, selectedCourierId, globalDeliveryFee]);
+  }, [isOpen, couriers, globalDeliveryFee]);
 
   if (!isOpen) return null;
 
@@ -59,8 +76,28 @@ export const NewOrderModal: React.FC<Props> = ({
       return;
     }
 
-    if (!selectedCourierId) {
-      setFormError('برجاء اختيار المندوب لإسناد الأوردر له');
+    let targetCourierId = selectedCourierId;
+
+    if (isAddingNewCourier || couriers.length === 0) {
+      if (!newCourierName.trim()) {
+        setFormError('برجاء إدخال اسم كابتن التوصيل المستلم للطلب');
+        return;
+      }
+      const activePharma = store.getActivePharmacy();
+      const createdCourier = store.registerCourier({
+        pharmacyId: activePharma.id,
+        name: newCourierName.trim(),
+        phone: newCourierPhone.trim() || '01000000000',
+        password: '123',
+        vehicleType: 'موتوسيكل',
+        vehicleNumber: 'بدون لوحة',
+        deliveryFeePerOrder: customDeliveryFee,
+      });
+      targetCourierId = createdCourier.id;
+    }
+
+    if (!targetCourierId) {
+      setFormError('برجاء اختيار المندوب أو كتابة اسمه لإسناد الأوردر له');
       return;
     }
 
@@ -68,12 +105,14 @@ export const NewOrderModal: React.FC<Props> = ({
       orderValue: numVal,
       orderType,
       paymentMethod,
-      courierId: selectedCourierId,
+      courierId: targetCourierId,
       deliveryFee: customDeliveryFee,
       quickNote,
     });
 
     setOrderValue('');
+    setNewCourierName('');
+    setNewCourierPhone('');
     setQuickNote('');
     setFormError('');
     onClose();
@@ -96,7 +135,7 @@ export const NewOrderModal: React.FC<Props> = ({
             <div>
               <h3 className="font-extrabold text-base">إضافة أوردر سريع (قيمة فقط)</h3>
               <p className="text-emerald-100 text-xs">
-                إدخال فوري للقيمة بدون بيانات عميل لسرعة العمل
+                تسجيل فوري للأوردر وإسناده للمندوب المطلوب
               </p>
             </div>
           </div>
@@ -138,15 +177,15 @@ export const NewOrderModal: React.FC<Props> = ({
                 value={orderValue}
                 onChange={(e) => setOrderValue(e.target.value)}
                 placeholder="0"
-                className="w-full pl-14 pr-4 py-3 bg-slate-50 border-2 border-emerald-500/40 rounded-2xl text-2xl font-black font-mono text-slate-900 focus:bg-white focus:border-emerald-600 focus:outline-hidden transition"
+                className="w-full text-center text-3xl font-extrabold font-mono py-3.5 bg-slate-50 border-2 border-emerald-500 rounded-2xl focus:bg-white focus:outline-hidden focus:ring-4 focus:ring-emerald-500/20 text-slate-900 transition"
               />
-              <span className="absolute left-4 top-3.5 text-sm font-bold text-slate-400">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">
                 جنيه
               </span>
             </div>
 
-            {/* Quick preset buttons */}
-            <div className="flex items-center gap-1.5 mt-2">
+            {/* Quick Values Buttons */}
+            <div className="flex items-center justify-between gap-1 mt-2 flex-wrap">
               <span className="text-[10px] text-slate-400 font-bold ml-1">قيم سريعة:</span>
               {[50, 80, 100, 150, 200, 300].map((preset) => (
                 <button
@@ -161,7 +200,7 @@ export const NewOrderModal: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Order Type (نوع الأوردر) */}
+          {/* Order Type */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
               <span>نوع الأوردر *</span>
@@ -195,7 +234,7 @@ export const NewOrderModal: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Payment Method: Cash vs Visa vs InstaPay */}
+          {/* Payment Method */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
               طريقة التحصيل *
@@ -237,15 +276,60 @@ export const NewOrderModal: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Select Courier */}
+          {/* Courier Selection or Instant Name Creation */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
-              <Bike className="w-4 h-4 text-slate-500" />
-              المندوب المستلم *
-            </label>
-            {couriers.length === 0 ? (
-              <div className="p-3 bg-amber-50 text-amber-900 text-xs rounded-xl border border-amber-200">
-                لا يوجد مناديب مسجلين في هذه الصيدلية حتى الآن. يمكنك تسجيل مندوب من زر الحسابات.
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                <Bike className="w-4 h-4 text-slate-500" />
+                <span>المندوب المستلم *</span>
+              </label>
+
+              {couriers.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddingNewCourier(!isAddingNewCourier)}
+                  className="text-[11px] font-bold text-emerald-700 hover:underline flex items-center gap-1"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>{isAddingNewCourier ? 'اختيار من القائمة' : '+ إضافة كابتن جديد'}</span>
+                </button>
+              )}
+            </div>
+
+            {isAddingNewCourier || couriers.length === 0 ? (
+              <div className="space-y-2 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    اسم الكابتن الجديد *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      value={newCourierName}
+                      onChange={(e) => setNewCourierName(e.target.value)}
+                      placeholder="مثال: مصطفى أحمد"
+                      className="w-full pl-3 pr-8 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:border-emerald-500 outline-hidden"
+                    />
+                    <User className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    رقم هاتف الكابتن (اختياري)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="tel"
+                      value={newCourierPhone}
+                      onChange={(e) => setNewCourierPhone(e.target.value)}
+                      placeholder="010XXXXXXXX"
+                      className="w-full pl-3 pr-8 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:border-emerald-500 outline-hidden"
+                    />
+                    <Phone className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5" />
+                  </div>
+                </div>
               </div>
             ) : (
               <select
@@ -255,21 +339,21 @@ export const NewOrderModal: React.FC<Props> = ({
               >
                 {couriers.map((c) => (
                   <option key={c.id} value={c.id}>
-                    كابتن {c.name} ({c.phone || c.vehicleType}) - عمولة: {c.deliveryFeePerOrder} ج
+                    كابتن {c.name} {c.phone ? `(${c.phone})` : ''} - عمولة: {c.deliveryFeePerOrder} ج
                   </option>
                 ))}
               </select>
             )}
           </div>
 
-          {/* Courier Delivery Fee (7 EGP customizable) */}
+          {/* Delivery Fee */}
           <div className="bg-amber-50/70 p-3 rounded-2xl border border-amber-200 flex items-center justify-between">
             <div>
               <span className="text-xs font-bold text-amber-900 block">
-                عمولة المندوب المضافة للمحفظة:
+                عمولة المندوب:
               </span>
               <span className="text-[10px] text-amber-700">
-                تضاف فوراً لحصالة المندوب
+                تضاف فوراً لحصالة المندوب عند التمام
               </span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -284,33 +368,32 @@ export const NewOrderModal: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Quick optional note */}
+          {/* Quick Note */}
           <div>
             <input
               type="text"
               value={quickNote}
               onChange={(e) => setQuickNote(e.target.value)}
-              placeholder="ملاحظة سريعة اختيارية (مثال: باقي 200 ج)"
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-hidden"
+              placeholder="ملاحظة سريعة أو عنوان العميل (اختياري)..."
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:border-emerald-500 focus:outline-hidden"
             />
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+          {/* Buttons */}
+          <div className="flex items-center gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-600 transition"
+              className="flex-1 py-2.5 px-3 border border-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 transition"
             >
               إلغاء
             </button>
             <button
               type="submit"
-              disabled={couriers.length === 0}
-              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5"
+              className="flex-2 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition shadow-md flex items-center justify-center gap-1.5"
             >
-              <Check className="w-4 h-4" />
-              <span>إرسال الأوردر فوراً (+{customDeliveryFee} ج)</span>
+              <Zap className="w-4 h-4 fill-white" />
+              <span>تسجيل وحفظ الأوردر ⚡</span>
             </button>
           </div>
         </form>

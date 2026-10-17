@@ -1,1 +1,54 @@
 @import "tailwindcss";
+
+@layer utilities {
+  .perspective-800 {
+    perspective: 800px;
+  }
+  .perspective-1200 {
+    perspective: 1200px;
+  }
+  .perspective-1600 {
+    perspective: 1600px;
+  }
+  .preserve-3d {
+    transform-style: preserve-3d;
+  }
+  .backface-hidden {
+    backface-visibility: hidden;
+  }
+}
+
+/* Luxury Black & White Monochrome Utilities */
+body {
+  color: #09090b;
+  background-color: #f4f4f5;
+  font-family: 'Cairo', sans-serif;
+}
+
+::selection {
+  background-color: #000000;
+  color: #ffffff;
+}
+
+/* 3D Monochrome Stage Pedestal Animation */
+@keyframes pedestal-glow-bw {
+  0%, 100% {
+    opacity: 0.35;
+    transform: rotateX(65deg) scale(1);
+    box-shadow: 0 0 35px rgba(255, 255, 255, 0.4);
+  }
+  50% {
+    opacity: 0.7;
+    transform: rotateX(65deg) scale(1.06);
+    box-shadow: 0 0 55px rgba(255, 255, 255, 0.7);
+  }
+}
+
+.animate-pedestal-bw {
+  animation: pedestal-glow-bw 4s ease-in-out infinite;
+}
+
+/* Black & White Image Filter */
+.bw-motorcycle {
+  filter: grayscale(100%) contrast(115%) brightness(105%);
+}

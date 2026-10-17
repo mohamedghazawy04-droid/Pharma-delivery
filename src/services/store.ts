@@ -86,42 +86,85 @@ const DEFAULT_INITIAL_PHARMACIES: Pharmacy[] = [
   },
 ];
 
-export const DEFAULT_COURIER_01000321253: CourierProfile = {
-  id: 'courier-01000321253',
-  name: 'كابتن التوصيل',
-  phone: '01000321253',
-  password: '123',
-  vehicleType: 'موتوسيكل',
-  vehicleNumber: '٧٨٩٥',
-  pharmacyId: 'pharma-main',
-  deliveryFeePerOrder: 7,
-  isOnDuty: true,
-  currentLocation: {
-    lat: 29.97056,
-    lng: 30.89801,
-    address: 'الجيزه ٦ اكتوبر الاتحاد التعاوني عماره ٦٢ بجوار مجمع المحاكم الحى ١١ صيدليه الديب',
-    speedKmH: 0,
-    lastMovedTimestamp: Date.now(),
-    isStationary: true,
-    stationarySeconds: 0,
-    accuracy: 15,
-    isGpsLive: true,
+const DEFAULT_INITIAL_COURIERS: CourierProfile[] = [
+  {
+    id: 'courier-deeb-1',
+    pharmacyId: 'pharma-main',
+    name: 'كابتن محمود',
+    phone: '01012345678',
+    vehicleType: 'موتوسيكل',
+    vehicleNumber: 'د ي ب 101',
+    deliveryFeePerOrder: 7,
+    isOnDuty: true,
+    lastKnownLocation: {
+      lat: 29.9715,
+      lng: 30.8995,
+      timestamp: new Date().toISOString(),
+      speed: 25,
+    },
+    shift: {
+      startTime: new Date().toISOString(),
+      isEnded: false,
+      totalOrdersDelivered: 1,
+      totalDeliveryEarnings: 7,
+      totalCollectedCash: 120,
+      totalCollectedVisa: 0,
+      totalCollectedInstapay: 65,
+      totalCollectedVodafoneCash: 0,
+      totalCollectedDeferred: 0,
+    },
+    isStoppageAlertActive: false,
+    stoppageDurationMinutes: 0,
+    createdAt: new Date().toISOString(),
   },
-  shift: {
-    startTime: new Date().toISOString(),
-    isEnded: false,
-    totalOrdersDelivered: 0,
-    totalDeliveryEarnings: 0,
-    totalCollectedCash: 0,
-    totalCollectedVisa: 0,
-    totalCollectedInstapay: 0,
+];
+
+const DEFAULT_INITIAL_ORDERS: Order[] = [
+  {
+    id: 'ord-initial-1',
+    pharmacyId: 'pharma-main',
+    orderNumber: '#1',
+    customerName: 'أ. أحمد مصطفى',
+    customerPhone: '01099887766',
+    customerAddress: 'عمارة 15 الحي 11 - شقة 4',
+    pills: ['بانادول إكسترا', 'أوجمنتين 1 جم'],
+    pillsSummary: 'بانادول إكسترا + أوجمنتين 1 جم',
+    orderType: 'عادي',
+    orderValue: 145,
+    deliveryFee: 7,
+    paymentMethod: 'cash',
+    courierId: 'courier-deeb-1',
+    courierName: 'كابتن محمود',
+    courierPhone: '01012345678',
+    status: 'assigned',
+    createdAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+    assignedAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+    isArchived: false,
+    quickNote: 'بانادول إكسترا + أوجمنتين 1 جم',
   },
-  isStoppageAlertActive: false,
-  stoppageAlertAcknowledged: false,
-  createdAt: '2026-10-06T00:00:00.000Z',
-  isInternetOnline: true,
-  offlineSeconds: 0,
-};
+  {
+    id: 'ord-initial-2',
+    pharmacyId: 'pharma-main',
+    orderNumber: '#2',
+    customerName: 'د. ياسمين كمال',
+    customerPhone: '01122334455',
+    customerAddress: 'فيلا 32 المجاورة الأولى',
+    pills: ['كونكور 5 مجم', 'أوميجا 3 بلس'],
+    pillsSummary: 'كونكور 5 مجم + أوميجا 3 بلس',
+    orderType: 'روشتة',
+    orderValue: 210,
+    deliveryFee: 7,
+    paymentMethod: 'instapay',
+    courierId: 'courier-deeb-1',
+    courierName: 'كابتن محمود',
+    courierPhone: '01012345678',
+    status: 'on_the_way',
+    createdAt: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
+    assignedAt: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
+    isArchived: false,
+    quickNote: 'كونكور 5 مجم + أوميجا 3 بلس',
+  },
+];
 
 function loadInitialState(): AppState {
   try {
@@ -174,56 +217,34 @@ function loadInitialState(): AppState {
         const finalCourierAuthId = parsed.authenticatedCourierId || savedCourierAuthId || null;
         const isPharmaAuth = parsed.authenticatedAsPharmacist || savedPharmaAuth;
 
-        // Determine active role cleanly:
-        // 1. If explicit query param ?role=courier, respect it.
-        // 2. If saved admin authenticated and NOT on courier URL, role is pharmacist.
-        // 3. If courier authenticated on device and not pharma, role is courier.
-        // 4. Default: pharmacist.
-        const finalRole: UserRole = isCourierUrl
-          ? 'courier'
-          : savedPharmaAuth
-          ? 'pharmacist'
-          : finalCourierAuthId
-          ? 'courier'
-          : 'pharmacist';
+        const finalRole: UserRole = isCourierUrl ? 'courier' : 'pharmacist';
 
         const savedDeletedIds = Array.isArray(parsed.deletedCourierIds)
           ? parsed.deletedCourierIds
           : [];
         const deletedSet = new Set<string>(savedDeletedIds);
 
-        let restoredCouriers: CourierProfile[] = (parsed.couriers || []).filter(
+        const restoredCouriers: CourierProfile[] = (parsed.couriers || []).filter(
           (c: any) => c && c.id && !deletedSet.has(c.id)
         );
 
-        if (finalCourierAuthId && !deletedSet.has(finalCourierAuthId) && !restoredCouriers.some((c: any) => c.id === finalCourierAuthId)) {
-          try {
-            const rawSavedProfile =
-              localStorage.getItem(`pharma_courier_profile_${finalCourierAuthId}`) ||
-              localStorage.getItem('pharma_last_logged_courier');
-            if (rawSavedProfile) {
-              const savedCourierObj = JSON.parse(rawSavedProfile);
-              if (savedCourierObj && savedCourierObj.id && !deletedSet.has(savedCourierObj.id)) {
-                restoredCouriers = [savedCourierObj, ...restoredCouriers];
-              }
-            }
-          } catch (e) {}
-        }
+        const finalCouriers =
+          restoredCouriers.length > 0 ? restoredCouriers : DEFAULT_INITIAL_COURIERS;
+        const finalOrders =
+          Array.isArray(parsed.orders) && parsed.orders.length > 0
+            ? parsed.orders
+            : DEFAULT_INITIAL_ORDERS;
 
         return {
           role: finalRole,
           activePharmacyId: finalActiveId,
-          currentCourierId: finalCourierAuthId || parsed.currentCourierId || restoredCouriers[0]?.id || '',
+          currentCourierId: parsed.currentCourierId || finalCouriers[0]?.id || '',
           pharmacies: finalPharmacies,
-          couriers: restoredCouriers,
-          orders: parsed.orders || [], // Real data only
+          couriers: finalCouriers,
+          orders: finalOrders,
           shiftSummaries: parsed.shiftSummaries || [],
-          authenticatedAsPharmacist: isPharmaAuth,
-          authenticatedCourierId: isCourierUrl
-            ? finalCourierAuthId
-            : savedPharmaAuth
-            ? null
-            : finalCourierAuthId,
+          authenticatedAsPharmacist: isPharmaAuth !== false,
+          authenticatedCourierId: null,
           deletedCourierIds: savedDeletedIds,
         };
       }
@@ -234,50 +255,27 @@ function loadInitialState(): AppState {
 
   const isCourierUrl =
     typeof window !== 'undefined' &&
-    (new URLSearchParams(window.location.search).get('role') === 'courier' ||
+    (new URLSearchParams(window.location.search).has('courierId') ||
+      new URLSearchParams(window.location.search).has('c') ||
+      new URLSearchParams(window.location.search).get('role') === 'courier' ||
       new URLSearchParams(window.location.search).get('mode') === 'courier');
 
-  const savedCourierAuthId = typeof localStorage !== 'undefined' ? localStorage.getItem('pharma_courier_auth_id') : null;
-  const savedPharmaAuth = typeof localStorage !== 'undefined' ? localStorage.getItem('pharma_admin_authenticated') === 'true' : false;
+  const savedPharmaAuth = typeof localStorage !== 'undefined' ? localStorage.getItem('pharma_admin_authenticated') !== 'false' : true;
 
-  let fallbackCouriers: CourierProfile[] = [DEFAULT_COURIER_01000321253];
-  if (savedCourierAuthId) {
-    try {
-      const rawSavedProfile =
-        localStorage.getItem(`pharma_courier_profile_${savedCourierAuthId}`) ||
-        localStorage.getItem('pharma_last_logged_courier');
-      if (rawSavedProfile) {
-        const savedCourierObj = JSON.parse(rawSavedProfile);
-        if (savedCourierObj && savedCourierObj.id) {
-          fallbackCouriers = [savedCourierObj];
-        }
-      }
-    } catch (e) {}
-  }
+  const finalRole: UserRole = isCourierUrl ? 'courier' : 'pharmacist';
 
-  const finalRole: UserRole = isCourierUrl
-    ? 'courier'
-    : savedPharmaAuth
-    ? 'pharmacist'
-    : savedCourierAuthId
-    ? 'courier'
-    : 'pharmacist';
-
-  // Pure clean state with only real pharmacy صيدليه الديب, NO fake pharmacies, NO fake orders and NO fake couriers
+  // Pure clean state with real pharmacy صيدليه الديب, default courier & sample orders
   return {
     role: finalRole,
     activePharmacyId: DEFAULT_INITIAL_PHARMACIES[0].id,
-    currentCourierId: savedCourierAuthId || fallbackCouriers[0]?.id || '',
+    currentCourierId: DEFAULT_INITIAL_COURIERS[0].id,
     pharmacies: DEFAULT_INITIAL_PHARMACIES,
-    couriers: fallbackCouriers,
-    orders: [], // Empty, no fake orders!
+    couriers: DEFAULT_INITIAL_COURIERS,
+    orders: DEFAULT_INITIAL_ORDERS,
     shiftSummaries: [],
     authenticatedAsPharmacist: savedPharmaAuth,
-    authenticatedCourierId: isCourierUrl
-      ? savedCourierAuthId
-      : savedPharmaAuth
-      ? null
-      : savedCourierAuthId,
+    authenticatedCourierId: null,
+    deletedCourierIds: [],
   };
 }
 
@@ -434,7 +432,7 @@ class Store {
       this.state = {
         ...this.state,
         pharmacies: serverPharmacies,
-        couriers: mergeById(filteredLocalCouriers, incomingCouriers),
+        couriers: Array.isArray(cloudData.couriers) ? incomingCouriers : filteredLocalCouriers,
         orders: Array.isArray(cloudData.orders)
           ? mergeById(this.state.orders, cloudData.orders)
           : this.state.orders,
@@ -976,15 +974,22 @@ class Store {
     this.notify(true);
   }
 
-  // ULTRA FAST ORDER ADDITION: VALUE ONLY (بدون بيانات عميل)
+  // ULTRA FAST ORDER ADDITION: Support customer name, pills list, and payment method
   public addFastOrder(data: {
     pharmacyId?: string;
     orderValue: number; // Required value
     orderType?: import('../types').OrderType;
-    paymentMethod: 'cash' | 'visa' | 'instapay';
+    paymentMethod: import('../types').PaymentMethod;
     courierId: string;
     deliveryFee?: number;
     quickNote?: string;
+    customerName?: string;
+    customerPhone?: string;
+    customerAddress?: string;
+    pills?: string[];
+    pillsSummary?: string;
+    courierName?: string;
+    courierPhone?: string;
   }) {
     const targetPharmacyId = data.pharmacyId || this.state.activePharmacyId;
     const targetCourier =
@@ -1007,13 +1012,18 @@ class Store {
       id: `ord-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       pharmacyId: targetPharmacyId,
       orderNumber,
+      customerName: data.customerName?.trim() || undefined,
+      customerPhone: data.customerPhone?.trim() || undefined,
+      customerAddress: data.customerAddress?.trim() || undefined,
+      pills: data.pills || (data.pillsSummary ? [data.pillsSummary] : undefined),
+      pillsSummary: data.pillsSummary?.trim() || (data.pills && data.pills.length > 0 ? data.pills.join('، ') : undefined),
       orderType: data.orderType || 'عادي',
       orderValue: Number(data.orderValue),
       deliveryFee: Number(assignedFee),
-      paymentMethod: data.paymentMethod,
+      paymentMethod: data.paymentMethod || 'cash',
       courierId: targetCourier ? targetCourier.id : data.courierId,
-      courierPhone: targetCourier?.phone,
-      courierName: targetCourier?.name,
+      courierPhone: targetCourier?.phone || data.courierPhone,
+      courierName: targetCourier?.name || data.courierName,
       status: 'assigned',
       createdAt: new Date().toISOString(),
       assignedAt: new Date().toISOString(),
@@ -1039,17 +1049,23 @@ class Store {
     return newOrder;
   }
 
-  // Edit existing order by Pharmacist (نوع الأوردر / القيمة / نقدي أو فيزا أو انستاباي / المندوب)
+  // Edit existing order by Pharmacist (نوع الأوردر / القيمة / طريقة الدفع / المندوب / الحبوب والعميل)
   // Changes reflect INSTANTLY on courier's screen via reactive state & BroadcastChannel
   public updateOrder(
     orderId: string,
     updates: {
       orderValue?: number;
       orderType?: import('../types').OrderType;
-      paymentMethod?: 'cash' | 'visa' | 'instapay';
+      paymentMethod?: import('../types').PaymentMethod;
       courierId?: string;
       deliveryFee?: number;
       quickNote?: string;
+      customerName?: string;
+      customerPhone?: string;
+      customerAddress?: string;
+      pills?: string[];
+      pillsSummary?: string;
+      status?: import('../types').OrderStatus;
     }
   ) {
     const existingOrder = this.state.orders.find((o) => o.id === orderId);
@@ -1071,7 +1087,7 @@ class Store {
         const newOrderVal =
           updates.orderValue !== undefined ? Number(updates.orderValue) : ord.orderValue;
         const newOrderType = updates.orderType !== undefined ? updates.orderType : ord.orderType || 'عادي';
-        const isDelivered = ord.status === 'delivered';
+        const isDelivered = (updates.status || ord.status) === 'delivered';
 
         return {
           ...ord,
@@ -1083,6 +1099,12 @@ class Store {
           courierPhone: targetCourier?.phone || ord.courierPhone,
           courierName: targetCourier?.name || ord.courierName,
           deliveryFee,
+          status: updates.status || ord.status,
+          customerName: updates.customerName !== undefined ? updates.customerName : ord.customerName,
+          customerPhone: updates.customerPhone !== undefined ? updates.customerPhone : ord.customerPhone,
+          customerAddress: updates.customerAddress !== undefined ? updates.customerAddress : ord.customerAddress,
+          pills: updates.pills !== undefined ? updates.pills : ord.pills,
+          pillsSummary: updates.pillsSummary !== undefined ? updates.pillsSummary : ord.pillsSummary,
           quickNote: updates.quickNote !== undefined ? updates.quickNote : ord.quickNote,
           updatedAt: new Date().toISOString(),
         };
@@ -1199,6 +1221,8 @@ class Store {
           const isCash = order.paymentMethod === 'cash';
           const isVisa = order.paymentMethod === 'visa';
           const isInstapay = order.paymentMethod === 'instapay';
+          const isVodafone = order.paymentMethod === 'vodafone_cash';
+          const isDeferred = order.paymentMethod === 'deferred';
 
           return {
             ...c,
@@ -1213,9 +1237,15 @@ class Store {
               totalCollectedVisa: isVisa
                 ? c.shift.totalCollectedVisa + order.orderValue
                 : c.shift.totalCollectedVisa,
-              totalCollectedInstapay: isInstapay
+              totalCollectedInstapay: (isInstapay || isVodafone)
                 ? c.shift.totalCollectedInstapay + order.orderValue
                 : c.shift.totalCollectedInstapay,
+              totalCollectedVodafoneCash: isVodafone
+                ? (c.shift.totalCollectedVodafoneCash || 0) + order.orderValue
+                : c.shift.totalCollectedVodafoneCash,
+              totalCollectedDeferred: isDeferred
+                ? (c.shift.totalCollectedDeferred || 0) + order.orderValue
+                : c.shift.totalCollectedDeferred,
             },
           };
         }
@@ -1948,8 +1978,6 @@ class Store {
       ...this.state,
       couriers: mergeById(this.state.couriers, [newCourier]),
       currentCourierId: newCourier.id,
-      role: 'courier',
-      authenticatedCourierId: newCourier.id,
       activePharmacyId: pharmacy.id,
     };
     this.notify(true);
@@ -2022,6 +2050,61 @@ class Store {
     } catch (e) {
       console.warn('Firestore deleteDoc fallback:', e);
     }
+
+    return true;
+  }
+
+  // Clear all couriers completely (wipe all courier data as requested)
+  public async clearAllCouriers(): Promise<boolean> {
+    const courierIds = this.state.couriers.map((c) => c.id);
+    const deletedSet = new Set<string>(this.state.deletedCourierIds || []);
+    courierIds.forEach((id) => {
+      deletedSet.add(id);
+      this.knownCourierIds.delete(id);
+    });
+
+    this.state = {
+      ...this.state,
+      couriers: [],
+      orders: this.state.orders.map((o) => ({
+        ...o,
+        courierId: '',
+        courierName: '',
+        courierPhone: '',
+      })),
+      deletedCourierIds: Array.from(deletedSet),
+      currentCourierId: '',
+    };
+
+    try {
+      courierIds.forEach((id) => {
+        localStorage.removeItem(`pharma_courier_profile_${id}`);
+      });
+      localStorage.removeItem('pharma_courier_auth_id');
+      localStorage.removeItem('pharma_last_logged_courier');
+      localStorage.removeItem('pharma_beacon_courier_id');
+    } catch {}
+
+    this.notify(true, true);
+
+    try {
+      await fetch('/api/couriers/wipe', { method: 'POST' });
+    } catch {}
+
+    try {
+      await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pharmacies: this.state.pharmacies,
+          couriers: [],
+          orders: this.state.orders,
+          shiftSummaries: this.state.shiftSummaries,
+          deletedCourierIds: Array.from(deletedSet),
+          replaceCouriers: true,
+        }),
+      });
+    } catch {}
 
     return true;
   }
